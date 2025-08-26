@@ -1,4 +1,4 @@
-function CSF_GUI_V6
+function CSF_GUI
 
 addpath('Freesurfer Tools')
 
