@@ -168,6 +168,8 @@ WF = [];
         savefolder = fullfile(subjectFolder, 'Waveforms');
         if ~exist(savefolder, 'dir')
             mkdir(savefolder);
+        else % if the folder exists, load the data and visualize
+            % togglePopWFs()
         end
 
         % Extract folders for RT2 and D.mat
@@ -203,9 +205,12 @@ WF = [];
             return;
         end
 
-        data.vx = MRIread(vxfile).vol;
-        data.vy = MRIread(vyfile).vol;
-        data.vz = MRIread(vzfile).vol;
+        LOAD4D = true;
+        if LOAD4D
+            data.vx = MRIread(vxfile).vol;
+            data.vy = MRIread(vyfile).vol;
+            data.vz = MRIread(vzfile).vol;
+        end
         data.mag = MRIread(magfile).vol;
         data.cube = MRIread(cubefile).vol;
 
@@ -691,8 +696,8 @@ WF = [];
         export.velx2D = data.vely2D;
         export.velx2D = data.velx2D;
         export.patch = data.patch;
-        export.patch_interp = data.patch_interp;
-        save('export.mat', 'export');
+        % export.patch_interp = data.patch_interp;
+        save(fullfile(subjectFolder, 'export.mat'), 'export');
     end
 
     function toggleSetDir()
