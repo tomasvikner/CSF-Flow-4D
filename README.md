@@ -5,8 +5,6 @@ Allows visualization, local segmentation, and flow direction estimation in CSF s
 
 ---
 
-## ✨ Features
-
 - **GUI-based workflow** for 4D CSF flow MRI analysis
 - Supports **NIfTI (.nii)** image loading (preliminary version)
 - Two operating modes:
@@ -24,3 +22,6 @@ Allows visualization, local segmentation, and flow direction estimation in CSF s
   - Displays the selected local plane and segmentation overlay in real-time
 - **Loading and saving**
   - By default, files are **loaded from and written to remote servers** unless a local path is explicitly specified in the code or GUI
+ 
+---
+vikner@wisc.edu 
