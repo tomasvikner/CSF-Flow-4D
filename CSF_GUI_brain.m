@@ -1,23 +1,20 @@
-% Simplified version to just show 3D data data and velocities within ROI
+% Load local vels in brainmask if LOCAL=true 
+% Save to server subject folders (BV_Waveforms)
+% Circularity constraint for CA (extractCircular)
+% - Should adapt this for larger ROIs, e.g., SC 
 
 function CSF_GUI_brain
 
-LOCAL = false; 
+LOCAL = true; 
 
 % PATH 
-vold = '/Volumes/radiology';
-groups = fullfile(vold, 'Groups');
-group = fullfile(groups, 'CVMRIGroup');
+group = '/Volumes/groups/CVMRIGroup';
 users = fullfile(group, 'Users');
 user = fullfile(users, 'txv016');
 wrap2 = fullfile(user, 'WRAP2');
-niid = fullfile(wrap2, 'niis', 'niis');
+niid = fullfile(wrap2, 'niis', 'CURRENT');
 base_dir = [];
 base_dir = niid; 
-
-if LOCAL
-    base_dir = '../BRAINVELS/'
-end
 
 % TODO: script that creates subject dirs locally 
 % Select a folder, then find that path on Radiology and load data
@@ -80,7 +77,7 @@ toggle = uidropdown(fig, ...
 
 szDropdown = uidropdown(fig, ...
     'Items', {'15', '25', '35', '45', '55', '65', '75'}, ...
-    'Value', '25', ...
+    'Value', '15', ...
     'Position', [830, 570, 55, 30], ...
     'Tooltip', 'Patch size');
 
@@ -162,8 +159,12 @@ btnGrid = uigridlayout(btnPanel, [8,1]);
 btnGrid.RowHeight = repmat({'1x'}, 1, 8);
 btnGrid.ColumnWidth = {'1x'};
 
-btnNames = {'Left LV', 'Right LV', 'Left FMo', 'Right FMo', '3rd Vent', 'C. Aqueduct', '4th Vent', 'Spinal Canal'};
-fileNames = {'LLV.mat', 'RLV.mat', 'LFMo.mat', 'RFMo.mat', 'V3.mat', 'CA.mat', 'V4.mat', 'SC.mat'};
+% TEMP edit: skip using LV for this anyway; add 2x CA + pCSF instead  
+% btnNames = {'Left LV', 'Right LV', 'Left FMo', 'Right FMo', '3rd Vent', 'C. Aqueduct', '4th Vent', 'Spinal Canal'};
+% fileNames = {'LLV.mat', 'RLV.mat', 'LFMo.mat', 'RFMo.mat', 'V3.mat', 'CA.mat', 'V4.mat', 'SC.mat'};
+
+btnNames = {'Left FMo', 'Right FMo', '3rd Vent', 'L. Aqueduct', 'U. Aqueduct', '4th Vent', 'Spinal Canal', 'Perivasc.'};
+fileNames = {'LFMo.mat', 'RFMo.mat', 'V3.mat', 'CAL.mat', 'CAU.mat', 'V4.mat', 'SC.mat', 'pCSF.mat'};
 
 btnHandles = gobjects(length(btnNames), 1);
 for k = 1:length(btnNames)
@@ -221,7 +222,7 @@ WF = [];
 
         % TODO load from SERVER - can we save D to server first also? 
         subjectFolder = fullfile(base_dir, subjname, 'processed');
-        cubefile = fullfile(subjectFolder, 'r4dT2.nii'); 
+        cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dT2.nii'); 
         dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat');
         load(dmatfile, 'D');
         distMatFile = fullfile(baseparent, 'CSFmasks', subjname, 'distMat.mat');
@@ -229,16 +230,25 @@ WF = [];
             load(distMatFile, 'distMat'); % distance over branchMat branches
             data.distMat = distMat;
         end
-        magfile = fullfile(subjectFolder, 'spm', 'MAG.nii');
+        magfile = fullfile(subjectFolder, 'MAG.nii');
 
-        savefolder = fullfile(subjectFolder, 'Waveforms');
+        savefolder = fullfile(subjectFolder, 'BV_Waveforms');
         if ~exist(savefolder, 'dir')
             mkdir(savefolder);
         end
 
-        % TODO: 
+        % TEMP: adding FS seg instead of distance for CA definition? 
+        aafile = fullfile(subjectFolder, 'FSproc', 'aa_nn4d.nii.gz');
+        data.aa = MRIread(aafile).vol;
+        data.aa = imrotate(data.aa, -90);
 
-        rvelsfolder = fullfile(subjectFolder, 'brainvels');
+        if LOCAL
+            rvelsfolder = fullfile('/Users/txv016/Documents/BRAINVELS', subjname, 'brainvels');
+            disp('Loading from LOCAL brainvels folder')
+        else
+            rvelsfolder = fullfile(subjectFolder, 'brainvels');
+            disp('Loading from REMOTE brainvels folder')
+        end
         load([rvelsfolder, '/rx.mat'], 'rx');
         load([rvelsfolder, '/ry.mat'], 'ry');
         load([rvelsfolder, '/rz.mat'], 'rz');
@@ -270,6 +280,10 @@ WF = [];
         data.rms = flip(data.rms, 2);
         data.mixed = data.rms.*data.cube;
 
+        % TEMP: show vents instead of CSF dist when segmenting CA 
+        VENTS = ismember(data.aa, [14 15 4 5 44 45]);
+        data.dist = VENTS; 
+
         % Set display limits
         rms_clim = [0, 0.25 * max(data.rms(:))];
         % mix_clim = [0, 0.25 * max(data.mixed(:))];
@@ -288,7 +302,7 @@ WF = [];
 
     end
 
-    function updateDisplays()
+function updateDisplays()
         if isempty(fieldnames(data)), return; end
         slice = round(s_slice.Value);
 
@@ -305,13 +319,19 @@ WF = [];
             imagesc(ax(1,1), squeeze(data.distMat(:,:,slice))');
             axis(ax(1,1), 'image');
             title(ax(1,1), 'Centerline');
-            % colormap(ax(1,1), jet); colorbar(ax(1,1));
         end
 
-        imagesc(ax(2,1), squeeze(data.dist(:,:,slice))');
-        axis(ax(2,1), 'image'); title(ax(2,1), 'CSF dist.');
+        linkaxes([ax(2,1), ax(2,2), ax(2,3)], 'xy');
 
-        linkaxes([ax(2,2), ax(2,3)], 'xy');
+        prevLim = axis(ax(2,1));  % Save zoom state
+        cla(ax(2,1));
+        imagesc(ax(2,1), squeeze(data.dist(:,:,slice))');
+        if ~isequal(prevLim, [0 1 0 1])  % If zoomed, restore view
+            axis(ax(2,1), prevLim);
+        else
+            axis(ax(2,1), 'image');
+        end
+        title(ax(2,1), 'FS ROIs'); 
 
         prevLim = axis(ax(2,2));  % Save zoom state
         cla(ax(2,2));
@@ -325,7 +345,6 @@ WF = [];
 
         prevLim = axis(ax(2,3));  % Save zoom state
         cla(ax(2,3));
-        % imagesc(ax(2,3), squeeze(data.rms(:,:,slice))');
         imagesc(ax(2,3), squeeze(data.mixed(:,:,slice))'); % TEMP 
         if ~isequal(prevLim, [0 1 0 1])  % If zoomed, restore view
             axis(ax(2,3), prevLim);
@@ -338,14 +357,8 @@ WF = [];
             updateWaveformsFromCoords(clickedX, clickedY, slice);
         end
 
-        % colormap(ax(2,3), gray);
-        % title(ax(2,3), 'RMS velocity');
         title(ax(2,3), 'CUBE x RMS velocity'); 
-        % clim(ax(2,3), rms_clim);
         clim(ax(2,3), mix_clim); 
-
-        % Initiate ax(1,3) as clickable
-        ax(1,3);
 
         clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
         for k = 1:numel(clickableAxes) %#ok<*FXUP>
@@ -367,7 +380,7 @@ WF = [];
             axis(ax(1,4), 'image');
             colormap(ax(1,4), gray);
             d2d = data.proj2D .* data.bseg;
-            clim(ax(1,4), [0.5 * min(d2d(:)), 0.5 * max(d2d(:))]);
+            clim(ax(1,4), [1.0 * min(d2d(:)), 1.0 * max(d2d(:))]);
             title(ax(1,4), sprintf('Flow plane (%s), frame %d', toggle.Value, frame));
             hold(ax(1,4), 'on');
             visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
@@ -375,6 +388,7 @@ WF = [];
         end
 
     end
+
 
     function updateFlowPlane()
         if ~isfield(data, 'proj2D') || isempty(data.proj2D), return; end

@@ -64,6 +64,14 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     end
     bseg_interp = extractCentral(logical(bseg_interp));
 
+    % TEMP: using circularity constraint
+    bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
+    bseg_interp = extractCentral(bseg_circular);
+
+    % TEMP: dilate 2 voxels for CA
+    SE1 = strel('sphere', 2);
+    bseg_interp = imdilate(bseg_interp, SE1);
+
     % Vectorized velocity extraction
     N = patch_width^2;
     idx = sub2ind([nx ny nz], sample_points(1,:), sample_points(2,:), sample_points(3,:)); % 1 x N
@@ -93,7 +101,6 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     vx_plane = zeros(ny2, nx2, n_frames);
     vy_plane = zeros(ny2, nx2, n_frames);
     vz_plane = zeros(ny2, nx2, n_frames);
-
     for t = 1:n_frames
         vx_plane(:,:,t) = interp2(vx_frame(:,:,t), XI, YI, 'cubic');
         vy_plane(:,:,t) = interp2(vy_frame(:,:,t), XI, YI, 'cubic');
