@@ -7,6 +7,9 @@ function CSF_GUI_brain
 
 LOCAL = true; 
 
+% TEMP FOR TESTING SAS CSF: should add GUI button for this 
+SASMODE = true;
+
 % PATH 
 group = '/Volumes/groups/CVMRIGroup';
 users = fullfile(group, 'Users');
@@ -58,6 +61,12 @@ end
 uibutton(fig, 'Text','Load 4D data', ...
     'Position',[10 865 100 30], ...
     'ButtonPushedFcn', @(btn,event) loadData());
+
+% --- SAFE CLOSE BUTTON ---
+closeBtn = uibutton(fig, ...
+    'Text', 'Close GUI', ...
+    'Position', [10, 835, 100, 30], ...
+    'ButtonPushedFcn', @(btn, evt) closeApp());
 
 s_slice = uislider(g,'Limits',[1 10],'MajorTicks',[],'Orientation','vertical');
 s_slice.Layout.Row = 2;
@@ -134,7 +143,7 @@ xRotBox = uieditfield(fig,'numeric', ...
     'Limits', [-180 180], ...
     'Value', rotation(1), ...
     'Position', [1065, 825, 55, 30], ...
-    'ValueChangedFcn', @(src, evt) setRotation(1, src.Value));
+    'ValueChangedFcn', @(src, evt) setRotation(1, src.Value)); %#ok<*NASGU>
 
 % Y rotation
 yRotBox = uieditfield(fig,'numeric', ...
@@ -172,7 +181,7 @@ for k = 1:length(btnNames)
         'ButtonPushedFcn', @(btn,event) saveWaveforms(fileNames{k}));
 end
 
-    function keyControl(~, event)
+function keyControl(~, event)
     step = 1;
     switch event.Key
         case 'rightarrow'  % Scroll forward through slices
@@ -185,6 +194,33 @@ end
                 s_slice.Value = s_slice.Value - step;
                 updateDisplays();
             end
+    end
+end
+
+% Define cleanup function
+function closeApp(~, ~)
+    try
+        % Stop and delete timer if active
+        if ~isempty(playTimer) && isvalid(playTimer)
+            stop(playTimer);
+            delete(playTimer);
+        end
+
+        % Remove listeners safely
+        delete(findall(0, 'Type', 'listener'));
+
+        % Delete figure
+        if isvalid(fig)
+            delete(fig);
+        end
+
+        % Force garbage collection
+        drawnow;
+        pause(0.05);
+        clearvars -except LOCAL group users user wrap2 niid base_dir
+        fprintf('GUI closed and memory cleared.\n');
+    catch ME
+        warning('Error during GUI close: %s', ME.message);
     end
 end
 
@@ -201,12 +237,14 @@ flowArrow = [];
 clickedX = [];
 clickedY = [];
 
-rms_clim = [];
+% rms_clim = [];
 mix_clim = [];
 
 subjectFolder = ''; % To store folder path from loadData
 savefolder = '';
 WF = [];
+
+clickableAxes = [];
 
 % *** LOAD DATA ***
     function loadData()
@@ -218,7 +256,7 @@ WF = [];
         % Extract folders for RT2 and D.mat
         [foldername, subjname] = fileparts(subjectFolder);
         baseparent = fileparts(foldername);
-        fig.Name = [fig.Name ' | ' subjname];
+        fig.Name = ['4D CSF Flow Viewer | ' subjname];
 
         % TODO load from SERVER - can we save D to server first also? 
         subjectFolder = fullfile(base_dir, subjname, 'processed');
@@ -237,11 +275,6 @@ WF = [];
             mkdir(savefolder);
         end
 
-        % TEMP: adding FS seg instead of distance for CA definition? 
-        aafile = fullfile(subjectFolder, 'FSproc', 'aa_nn4d.nii.gz');
-        data.aa = MRIread(aafile).vol;
-        data.aa = imrotate(data.aa, -90);
-
         if LOCAL
             rvelsfolder = fullfile('/Users/txv016/Documents/BRAINVELS', subjname, 'brainvels');
             disp('Loading from LOCAL brainvels folder')
@@ -259,6 +292,14 @@ WF = [];
 
         data.mag = MRIread(magfile).vol;
         data.cube = MRIread(cubefile).vol;
+        % TEMP: adding FS seg instead of distance for CA definition? 
+        aafile = fullfile(subjectFolder, 'FSproc', 'aa_nn4d.nii.gz');
+        try
+            data.aa = MRIread(aafile).vol;
+            data.aa = imrotate(data.aa, -90);
+        catch
+            data.aa = zeros(size(data.mag));
+        end
 
         data.mag = imrotate(data.mag, -90);
         data.cube = imrotate(data.cube, -90);
@@ -287,13 +328,17 @@ WF = [];
         % Set display limits
         rms_clim = [0, 0.25 * max(data.rms(:))];
         % mix_clim = [0, 0.25 * max(data.mixed(:))];
-        mix_clim = [0, 0.1 * max(data.mixed(:))];
+        mix_clim = [0, 0.15 * max(data.mixed(:))];
 
         [~, ~, zres] = size(data.rms);
         s_slice.Limits = [1 zres];
         s_slice.Value = round(zres/2);
 
         currentFrame = 1; % Start at first frame
+
+        % TEMP: taking from updateDisplays to here
+        clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
+        linkaxes([ax(2,1), ax(2,2), ax(2,3)], 'xy');
 
         updateDisplays();
         updateFlowPlane();
@@ -302,7 +347,7 @@ WF = [];
 
     end
 
-function updateDisplays()
+    function updateDisplays()
         if isempty(fieldnames(data)), return; end
         slice = round(s_slice.Value);
 
@@ -321,8 +366,10 @@ function updateDisplays()
             title(ax(1,1), 'Centerline');
         end
 
-        linkaxes([ax(2,1), ax(2,2), ax(2,3)], 'xy');
+        % TEMP: move to load function 
+        % linkaxes([ax(2,1), ax(2,2), ax(2,3)], 'xy');
 
+        % TEMP: no zoom state preserve
         prevLim = axis(ax(2,1));  % Save zoom state
         cla(ax(2,1));
         imagesc(ax(2,1), squeeze(data.dist(:,:,slice))');
@@ -356,11 +403,11 @@ function updateDisplays()
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, slice);
         end
-
         title(ax(2,3), 'CUBE x RMS velocity'); 
         clim(ax(2,3), mix_clim); 
 
-        clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
+        % TEMP: move to load function 
+        % clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
         for k = 1:numel(clickableAxes) %#ok<*FXUP>
             axx = clickableAxes(k);
             axx.PickableParts = 'all';
@@ -377,18 +424,17 @@ function updateDisplays()
         if isfield(data, 'proj2D') && ~isempty(data.proj2D)
             frame = currentFrame;
             imagesc(ax(1,4), data.proj2D(:,:,frame));
-            axis(ax(1,4), 'image');
+            % axis(ax(1,4), 'image');
             colormap(ax(1,4), gray);
             d2d = data.proj2D .* data.bseg;
             clim(ax(1,4), [1.0 * min(d2d(:)), 1.0 * max(d2d(:))]);
-            title(ax(1,4), sprintf('Flow plane (%s), frame %d', toggle.Value, frame));
+            % title(ax(1,4), sprintf('Flow plane (%s), frame %d', toggle.Value, frame));
             hold(ax(1,4), 'on');
             visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
             hold(ax(1,4), 'off');
         end
 
     end
-
 
     function updateFlowPlane()
         if ~isfield(data, 'proj2D') || isempty(data.proj2D), return; end
@@ -413,7 +459,7 @@ function updateDisplays()
         visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
         hold(ax(1,4), 'off');
         d2d = data.proj2D .* data.bseg;
-        clim(ax(1,4), [0.5 * min(d2d(:)), 0.5 * max(d2d(:))]);
+        clim(ax(1,4), [0.75 * min(d2d(:)), 0.75 * max(d2d(:))]);
     end
 
     function saveWaveforms(filename)
@@ -514,9 +560,20 @@ function updateDisplays()
 
         patch_width = str2double(szDropdown.Value);
         local_thresh = str2double(thrDropdown.Value);
-        MODE = 'mixed'; % alternative, rms or cube
-        [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-            extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, MODE, local_thresh, DIRMODE);
+
+        % *** SPECIFY IN TOP OF GUI *** 
+        if SASMODE
+            SEGMODE = 'cube'; % alternative, rms or cube
+            SHAPE = 'RECT';
+            [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
+                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPE);
+        else
+            SEGMODE = 'mixed'; % alternative, rms or cube
+            SHAPE = 'CIRC';
+            [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
+                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPE);
+        end
+
         data.proj2D = proj2D.proj;
         data.velx2D = proj2D.velx;
         data.vely2D = proj2D.vely;
@@ -564,7 +621,7 @@ function updateDisplays()
         % Local CS
         imagesc(ax(1,3), patch);
         axis(ax(1,3), 'image');
-        title(ax(1,3), ['Flow plane: ' MODE]);
+        title(ax(1,3), ['Flow plane: ' SEGMODE]);
         colormap(ax(1,3), gray);
         hold(ax(1,3), 'on');
         visboundaries(ax(1,3), data.bseg, 'Color', 'r', 'LineWidth', 1.5);

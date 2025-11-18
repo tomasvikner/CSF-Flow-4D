@@ -1,6 +1,6 @@
 % Todo need to update this sampling a bit 
 function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ... 
-    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE)
+    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE)
     % Extracts through-plane flow using 2x interpolated patch and velocities
     % Fully vectorized version for velocity extraction and projection
 
@@ -65,8 +65,13 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     bseg_interp = extractCentral(logical(bseg_interp));
 
     % TEMP: using circularity constraint
-    bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
-    bseg_interp = extractCentral(bseg_circular);
+    if strcmp(SHAPE, 'CIRC')
+        bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
+        bseg_interp = extractCentral(bseg_circular);
+    elseif strcmp(SHAPE, 'RECT')
+        bseg_rectangular = extractRectangular(bseg_interp, patch_interp, thresh);
+        bseg_interp = extractCentral(bseg_rectangular);
+    end
 
     % TEMP: dilate 2 voxels for CA
     SE1 = strel('sphere', 2);
