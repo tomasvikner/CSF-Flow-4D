@@ -26,7 +26,8 @@ currentFrame = 1; % Track current frame
 maxFrame = 20;
 scatterHandles = [];
 
-addpath('Freesurfer Tools')
+% TEMP 
+addpath('/Users/txv016/Documents/MATLAB/Freesurfer Tools')
 
 delete(findall(0, 'Type', 'figure', 'Name', '4D CSF Flow Viewer'));
 
