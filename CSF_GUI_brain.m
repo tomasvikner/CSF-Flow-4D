@@ -10,6 +10,9 @@ LOCAL = true;
 % TEMP FOR TESTING SAS CSF: should add GUI button for this 
 SASMODE = true;
 
+% Directory for saving waveforms in remote subject folder 
+OUTFOLDER = 'BV_Waveforms';
+
 % PATH 
 group = '/Volumes/groups/CVMRIGroup';
 users = fullfile(group, 'Users');
@@ -18,10 +21,6 @@ wrap2 = fullfile(user, 'WRAP2');
 niid = fullfile(wrap2, 'niis', 'CURRENT');
 base_dir = [];
 base_dir = niid; 
-
-% TODO: script that creates subject dirs locally 
-% Select a folder, then find that path on Radiology and load data
-% Save results local..y 
 
 currentFrame = 1; % Track current frame
 maxFrame = 20;
@@ -85,7 +84,7 @@ toggle = uidropdown(fig, ...
     'Position', [830, 865, 55, 30]);
 
 szDropdown = uidropdown(fig, ...
-    'Items', {'15', '25', '35', '45', '55', '65', '75'}, ...
+    'Items', {'15', '25', '35', '45', '55', '65', '75', '85', '95', '105', '115', '125'}, ...
     'Value', '15', ...
     'Position', [830, 570, 55, 30], ...
     'Tooltip', 'Patch size');
@@ -96,9 +95,17 @@ thrDropdown = uidropdown(fig, ...
     'Position', [1065, 570, 55, 30], ...
     'Tooltip', 'Patch size');
 
+cscDropdown = uidropdown(fig, ...
+    'Items', {'10', '20', '30', '40', '50', '60', '70', '80', '90', '100'}, ...
+    'Value', '50', ...
+    'Position', [1065, 600, 55, 30], ...
+    'Tooltip', 'C-Scale');
+
 thrDropdown.ValueChangedFcn = @(src, evt) updateFlowPlane();
 szDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
 thrDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
+% cscDropdown.ValueChangedFcn = @(src, evt) updateFlowPlane();
+cscDropdown.ValueChangedFcn = @(src, evt) togglePlay();
 
     function onPatchOrThreshChange()
         updateDisplays();
@@ -270,7 +277,7 @@ clickableAxes = [];
         end
         magfile = fullfile(subjectFolder, 'MAG.nii');
 
-        savefolder = fullfile(subjectFolder, 'BV_Waveforms');
+        savefolder = fullfile(subjectFolder, OUTFOLDER);
         if ~exist(savefolder, 'dir')
             mkdir(savefolder);
         end
@@ -427,7 +434,8 @@ clickableAxes = [];
             % axis(ax(1,4), 'image');
             colormap(ax(1,4), gray);
             d2d = data.proj2D .* data.bseg;
-            clim(ax(1,4), [1.0 * min(d2d(:)), 1.0 * max(d2d(:))]);
+            CSCALE = 0.01*str2double(cscDropdown.Value);
+            clim(ax(1,4), [CSCALE * min(d2d(:)), CSCALE * max(d2d(:))]);
             % title(ax(1,4), sprintf('Flow plane (%s), frame %d', toggle.Value, frame));
             hold(ax(1,4), 'on');
             visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
@@ -459,7 +467,8 @@ clickableAxes = [];
         visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
         hold(ax(1,4), 'off');
         d2d = data.proj2D .* data.bseg;
-        clim(ax(1,4), [0.75 * min(d2d(:)), 0.75 * max(d2d(:))]);
+        CSCALE = 0.01*str2double(cscDropdown.Value);
+        clim(ax(1,4), [CSCALE * min(d2d(:)), CSCALE * max(d2d(:))]);
     end
 
     function saveWaveforms(filename)
