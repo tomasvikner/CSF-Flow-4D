@@ -3,24 +3,18 @@
 % Circularity constraint for CA (extractCircular)
 % - Should adapt this for larger ROIs, e.g., SC 
 
-function CSF_GUI_brain
+function CSF_GUI
 
 % USER SETTINGS: EDIT BEFORE RUN
 LOCAL = true; 
-LOCALVELS = '/Users/txv016/Documents/BRAINVELS';
+LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
 
 % Directory for saving waveforms in remote subject folder 
-% OUTFOLDER = 'BV_Waveforms';
+% OUTFOLDER = 'BV_Waveforms'; % WRAP 2025 U/L CA 
 OUTFOLDER = 'TEMP';
 
-% PATH 
-group = '/Volumes/groups/CVMRIGroup';
-users = fullfile(group, 'Users');
-user = fullfile(users, 'txv016');
-wrap2 = fullfile(user, 'WRAP2');
-niid = fullfile(wrap2, 'niis', 'CURRENT');
-base_dir = [];
-base_dir = niid; 
+% PATH ON REMOTE SERVER
+BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
 
 currentFrame = 1; % Track current frame
 maxFrame = 20;
@@ -272,7 +266,7 @@ function closeApp(~, ~)
         % Force garbage collection
         drawnow;
         pause(0.05);
-        clearvars -except LOCAL group users user wrap2 niid base_dir
+        clearvars -except LOCAL group users user wrap2 BASEPATH
         fprintf('GUI closed and memory cleared.\n');
     catch ME
         warning('Error during GUI close: %s', ME.message);
@@ -314,7 +308,7 @@ clickableAxes = [];
         fig.Name = ['4D CSF Flow Viewer | ' subjname];
 
         % TODO load from SERVER - can we save D to server first also? 
-        subjectFolder = fullfile(base_dir, subjname, 'processed');
+        subjectFolder = fullfile(BASEPATH, subjname, 'processed');
         cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dT2.nii'); 
         dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); % NOT USED ATM
         if exist(dmatfile, 'file')
