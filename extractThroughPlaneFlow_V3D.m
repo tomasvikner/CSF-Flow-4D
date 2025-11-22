@@ -47,7 +47,7 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     [XI, YI] = meshgrid(xi, yi);
     patch_interp = interp2(patch, XI, YI, 'cubic');
 
-    cube_patch_vals = data.cube(lin_idx);
+    cube_patch_vals = data.CUBE(lin_idx);
     cube_patch = reshape(cube_patch_vals, patch_width, patch_width);
     cube_patch = interp2(cube_patch, XI, YI, 'cubic');
     

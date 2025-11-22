@@ -156,7 +156,7 @@ rotation = [0, 0, 1]; % [x, y, z]
 DIRMODE = 'pca'; 
 dirBtn = uibutton(fig, ...
     'Text', 'DIRECTION: PCA', ...
-    'Position', [140, 805, 120, 30]); % xpos swap 900 -> 120
+    'Position', [140, 835, 120, 30]); % xpos swap 900 -> 120
 dirBtn.ButtonPushedFcn = @(btn, evt) toggleDIRMODE();
 
 SHAPEMODE = 'CIRC';
@@ -165,16 +165,16 @@ shapeBtn = uibutton(fig, ...
     'Position', [140, 865, 120, 30]); % xpos swap 900 -> 120
 shapeBtn.ButtonPushedFcn = @(btn, evt) toggleSHAPEMODE();
 
-SEGMODE = 'MIXED';
-segBtn = uibutton(fig, ...
-    'Text', 'SEGVOL: Mixed', ...
-    'Position', [140, 835, 120, 30]); % xpos swap 900 -> 120
-segBtn.ButtonPushedFcn = @(btn, evt) toggleSEGMODE();
+SEGMODE = 'CUBE';
+shapeBtn = uibutton(fig, ...
+    'Text', 'SEGVOL: Circular', ...
+    'Position', [140, 865, 120, 30]); % xpos swap 900 -> 120
+shapeBtn.ButtonPushedFcn = @(btn, evt) toggleSHAPEMODE();
 
 WFSHOWMODE = 'ALL';
 wfsBtn = uibutton(fig, ...
     'Text', 'WF vis: Flow + PCA', ...
-    'Position', [140, 775, 120, 30]);
+    'Position', [140, 805, 120, 30]);
 wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
 
 % X rotation
@@ -343,7 +343,7 @@ clickableAxes = [];
         end
 
         data.mag = MRIread(magfile).vol;
-        data.CUBE = MRIread(cubefile).vol;
+        data.cube = MRIread(cubefile).vol;
 
         if strcmp(LOADMODE, 'MASK')
             load([rvelsfolder, '/rx.mat'], 'rx');
@@ -374,7 +374,7 @@ clickableAxes = [];
         end
 
         data.mag = imrotate(data.mag, -90);
-        data.CUBE = imrotate(data.CUBE, -90);
+        data.cube = imrotate(data.cube, -90);
         data.dist = flip(D, 2); % NOT USED ATM
         data.roi = roi;
 
@@ -390,7 +390,7 @@ clickableAxes = [];
         data.rms = zeros(size(data.imap));
         data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
         data.rms = flip(data.rms, 2);
-        data.MIXED = data.rms.*data.CUBE;
+        data.mixed = data.rms.*data.cube;
 
         % TEMP: show vents instead of CSF dist when segmenting CA 
         VENTS = ismember(data.aa, [14 15 4 5 44 45]);
@@ -398,8 +398,8 @@ clickableAxes = [];
 
         % Set display limits
         rms_clim = [0, 0.25 * max(data.rms(:))];
-        % mix_clim = [0, 0.25 * max(data.MIXED(:))];
-        mix_clim = [0, 0.15 * max(data.MIXED(:))];
+        % mix_clim = [0, 0.25 * max(data.mixed(:))];
+        mix_clim = [0, 0.15 * max(data.mixed(:))];
 
         [~, ~, zres] = size(data.rms);
         s_slice.Limits = [1 zres];
@@ -454,7 +454,7 @@ clickableAxes = [];
 
         prevLim = axis(ax(2,2));  % Save zoom state
         cla(ax(2,2));
-        imagesc(ax(2,2), squeeze(data.CUBE(:,:,slice))');
+        imagesc(ax(2,2), squeeze(data.cube(:,:,slice))');
         if ~isequal(prevLim, [0 1 0 1])  % If zoomed, restore view
             axis(ax(2,2), prevLim);
         else
@@ -464,7 +464,7 @@ clickableAxes = [];
 
         prevLim = axis(ax(2,3));  % Save zoom state
         cla(ax(2,3));
-        imagesc(ax(2,3), squeeze(data.MIXED(:,:,slice))'); % TEMP 
+        imagesc(ax(2,3), squeeze(data.mixed(:,:,slice))'); % TEMP 
         if ~isequal(prevLim, [0 1 0 1])  % If zoomed, restore view
             axis(ax(2,3), prevLim);
         else
@@ -736,18 +736,18 @@ clickableAxes = [];
 
         % Plot coronal RMS view in ax(1,3)
         cla(ax(2,4), 'reset');
-        cor = squeeze(data.CUBE(clickedX, :, :)); % could use data.MIXED
+        cor = squeeze(data.cube(clickedX, :, :)); % could use data.mixed
         nz = size(cor, 2);
         ys = clickedY-nz/2; ye = clickedY+nz/2;
-        if ye > size(data.CUBE, 2)
-            ye = size(data.CUBE, 2);
+        if ye > size(data.cube, 2)
+            ye = size(data.cube, 2);
         end
         cor = cor(ys:ye, :);
         imagesc(ax(2,4), cor);
         axis(ax(2,4), 'image');
         colormap(ax(2,4), gray);
         title(ax(2,4), 'CUBE \times RMS (coronal)');
-        clim(ax(2,4), [0, 1.0 * max(data.CUBE(:))]);
+        clim(ax(2,4), [0, 1.0 * max(data.cube(:))]);
         hold(ax(2,4), 'on');
 
         % Add velocity direction as quiver
@@ -932,21 +932,6 @@ clickableAxes = [];
         elseif strcmp(SHAPEMODE, 'ANY')
             SHAPEMODE = 'CIRC';
             shapeBtn.Text = 'SHAPE: Circular';
-        end
-
-        % Update flow-plane and waveforms if a point is selected
-        if ~isempty(clickedX) && ~isempty(clickedY)
-            updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
-        end
-    end
-
-    function toggleSEGMODE()
-        if strcmp(SEGMODE, 'MIXED')
-            SEGMODE = 'CUBE';
-            segBtn.Text = 'SEGVOL: CUBE';
-        elseif strcmp(SEGMODE, 'CUBE')
-            SEGMODE = 'MIXED';
-            segBtn.Text = 'SEGVOL: Mixed';
         end
 
         % Update flow-plane and waveforms if a point is selected
