@@ -5,22 +5,16 @@
 
 function CSF_GUI_brain
 
+% USER SETTINGS: EDIT BEFORE RUN
 LOCAL = true; 
-
-% TEMP FOR TESTING SAS CSF: should add GUI button for this 
-SASMODE = true;
+LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
 
 % Directory for saving waveforms in remote subject folder 
-OUTFOLDER = 'BV_Waveforms';
+% OUTFOLDER = 'BV_Waveforms'; % WRAP 2025 U/L CA 
+OUTFOLDER = 'TEMP';
 
-% PATH 
-group = '/Volumes/groups/CVMRIGroup';
-users = fullfile(group, 'Users');
-user = fullfile(users, 'txv016');
-wrap2 = fullfile(user, 'WRAP2');
-niid = fullfile(wrap2, 'niis', 'CURRENT');
-base_dir = [];
-base_dir = niid; 
+% PATH ON REMOTE SERVER
+BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
 
 currentFrame = 1; % Track current frame
 maxFrame = 20;
@@ -44,28 +38,43 @@ g.Padding = [2.5 2.5 2.5 2.5];  % Space around entire grid
 ax = gobjects(3, ncols);
 for i = 1:3
     for j = 1:ncols
-        ax(i,j) = uiaxes(g);
-        ax(i,j).Layout.Row = i;
-        ax(i,j).Layout.Column = j;
-        colormap(ax(i,j), gray);
+        if i+j > 2
+            ax(i,j) = uiaxes(g);
+            ax(i,j).Layout.Row = i;
+            ax(i,j).Layout.Column = j;
+            colormap(ax(i,j), gray);
+        end
     end
 end
 
 for i = 1:2
     for j = 1:ncols
-        ax(i,j).XTick = [];
-        ax(i,j).YTick = [];
+        if i+j > 2
+            ax(i,j).XTick = [];
+            ax(i,j).YTick = [];
+        end
     end
 end
 
+% Right buttons X pos and height/width
+RBX = 1120;
+RBH = 30; 
+RBW = 55;
+
+LOADMODE = 'MASK';
+mvBtn = uibutton(fig, ...
+    'Text', 'Load Mode: Masked', ...
+    'Position', [15, 835, 120, 30]);
+mvBtn.ButtonPushedFcn = @(btn, evt) toggleLOADMODE();
+
 uibutton(fig, 'Text','Load 4D data', ...
-    'Position',[10 865 100 30], ...
+    'Position',[15 865 120 30], ...
     'ButtonPushedFcn', @(btn,event) loadData());
 
 % --- SAFE CLOSE BUTTON ---
 closeBtn = uibutton(fig, ...
     'Text', 'Close GUI', ...
-    'Position', [10, 835, 100, 30], ...
+    'Position', [15, 805, 120, 30], ...
     'ButtonPushedFcn', @(btn, evt) closeApp());
 
 s_slice = uislider(g,'Limits',[1 10],'MajorTicks',[],'Orientation','vertical');
@@ -78,94 +87,117 @@ addlistener(s_slice,'ValueChanged',@(src,evt) updateFcn());
 % Keyboard arrow control
 fig.WindowKeyPressFcn = @keyControl;
 
-% Create dropdown and position it over ax(1,4)
-toggle = uidropdown(fig, ...
-    'Items', {'proj', 'vx', 'vy', 'vz'}, ...
-    'Value', 'proj', ...
-    'Position', [830, 865, 55, 30]);
-
+% Initiate segmentation buttons and set y-positions
+y1 = 730; 
+y2 = y1 - 2*RBH;
+y3 = y2 - 2*RBH;
 szDropdown = uidropdown(fig, ...
     'Items', {'15', '25', '35', '45', '55', '65', '75', '85', '95', '105', '115', '125'}, ...
     'Value', '15', ...
-    'Position', [830, 570, 55, 30], ...
-    'Tooltip', 'Patch size');
+    'Position', [RBX, y1, RBW, RBH], ...
+    'Tooltip', 'Set Patch Width (voxels before interp.)');
 
 thrDropdown = uidropdown(fig, ...
     'Items', {'10', '20', '30', '40', '50', '60', '70'}, ...
     'Value', '20', ...
-    'Position', [1065, 570, 55, 30], ...
-    'Tooltip', 'Patch size');
+    'Position', [RBX, y2, RBW, RBH], ...
+    'Tooltip', 'Set Local Threshold (%)');
 
 cscDropdown = uidropdown(fig, ...
     'Items', {'10', '20', '30', '40', '50', '60', '70', '80', '90', '100'}, ...
-    'Value', '50', ...
-    'Position', [1065, 600, 55, 30], ...
-    'Tooltip', 'C-Scale');
+    'Value', '80', ...
+    'Position', [RBX, y3, RBW, RBH], ...
+    'Tooltip', 'Set Velocity Range (%)');
+
+% Add labels for the dropdowns
+szLabel = uilabel(fig, ...
+    'Position', [RBX, y1+RBH, 55, 20], ...
+    'Text', 'SegWidth');
+
+thrLabel = uilabel(fig, ...
+    'Position', [RBX, y2+RBH, 55, 20], ...
+    'Text', 'Threshold');
+
+cscLabel = uilabel(fig, ...
+    'Position', [RBX, y3+RBH, 55, 20], ...
+    'Text', 'VelScale');
 
 thrDropdown.ValueChangedFcn = @(src, evt) updateFlowPlane();
 szDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
 thrDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
-% cscDropdown.ValueChangedFcn = @(src, evt) updateFlowPlane();
 cscDropdown.ValueChangedFcn = @(src, evt) togglePlay();
 
-    function onPatchOrThreshChange()
-        updateDisplays();
-        updateFlowPlane();
-        % Update waveforms only if clicked point exists
-        if ~isempty(clickedX) && ~isempty(clickedY)
-            updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
-        end
-    end
+% Create dropdown and position it over ax(1,4)
+toggle = uidropdown(fig, ...
+    'Items', {'proj', 'vx', 'vy', 'vz'}, ...
+    'Value', 'proj', ...
+    'Position', [830, 865, RBW, RBH]);
 
+% Play/Loop button
 playBtn = uibutton(fig, ...
     'Text', 'Loop', ...
-    'Position', [1065, 865, 55, 30]);
+    'Position', [830, 835, 55, 30]);
 playBtn.ButtonPushedFcn = @(btn, evt) togglePlay();
 
 savedBtn = uibutton(fig, ... % show saved
     'Text', 'Show Saved', ...
-    'Position', [580, 270, 80, 30]);
+    'Position', [RBX, 270, 75, 30]);
 savedBtn.ButtonPushedFcn = @(btn, evt) toggleSaved();
 
-printDelayBtn = uibutton(fig, ... % show saved
+printDelayBtn = uibutton(fig, ... % print delay
     'Text', 'Print Delay', ...
-    'Position', [580, 300, 80, 30]);
+    'Position', [RBX, 240, 75, 30]);
 printDelayBtn.ButtonPushedFcn = @(btn, evt) printDelay();
 
 direction = []; % PCA and manual
 direction.pca = [];
 direction.man = [0, 0, 1]; %
-rotation = zeros(3, 1);
+rotation = [0, 0, 1]; % [x, y, z] 
 DIRMODE = 'pca'; 
-
 dirBtn = uibutton(fig, ...
-    'Text', 'DIRMODE: PCA', ...
-    'Position', [900, 865, 150, 30]);
+    'Text', 'DIRECTION: PCA', ...
+    'Position', [140, 835, 120, 30]); % xpos swap 900 -> 120
 dirBtn.ButtonPushedFcn = @(btn, evt) toggleDIRMODE();
 
-% Initialize rotation variable
-rotation = [0, 0, 0];  % [x, y, z] in degrees
+SHAPEMODE = 'CIRC';
+shapeBtn = uibutton(fig, ...
+    'Text', 'SHAPE: Circular', ...
+    'Position', [140, 865, 120, 30]); % xpos swap 900 -> 120
+shapeBtn.ButtonPushedFcn = @(btn, evt) toggleSHAPEMODE();
+
+WFSHOWMODE = 'ALL';
+wfsBtn = uibutton(fig, ...
+    'Text', 'WF vis: Flow + PCA', ...
+    'Position', [140, 805, 120, 30]);
+wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
 
 % X rotation
+yrpos = 845;
+hrotbox = 25;
+wrotbox = 55;
 xRotBox = uieditfield(fig,'numeric', ...
     'Limits', [-180 180], ...
     'Value', rotation(1), ...
-    'Position', [1065, 825, 55, 30], ...
+    'Position', [RBX, yrpos, wrotbox, hrotbox], ...
     'ValueChangedFcn', @(src, evt) setRotation(1, src.Value)); %#ok<*NASGU>
 
 % Y rotation
 yRotBox = uieditfield(fig,'numeric', ...
     'Limits', [-180 180], ...
     'Value', rotation(2), ...
-    'Position', [1065, 785, 55, 30], ...
+    'Position', [RBX, yrpos-hrotbox, wrotbox, hrotbox], ...
     'ValueChangedFcn', @(src, evt) setRotation(2, src.Value));
 
 % Z rotation
 zRotBox = uieditfield(fig,'numeric', ...
     'Limits', [-180 180], ...
     'Value', rotation(3), ...
-    'Position', [1065, 745, 55, 30], ...
+    'Position', [RBX, yrpos-2*hrotbox, wrotbox, hrotbox], ...
     'ValueChangedFcn', @(src, evt) setRotation(3, src.Value));
+
+rotLabel = uilabel(fig, ...
+    'Position', [RBX, yrpos+hrotbox, wrotbox, hrotbox], ...
+    'Text', 'Set X/Y/Z');
 
 % Create button panel for saving waveforms (row 3, col 4)
 btnPanel = uipanel(g);
@@ -187,6 +219,15 @@ btnHandles = gobjects(length(btnNames), 1);
 for k = 1:length(btnNames)
     btnHandles(k) = uibutton(btnGrid, 'Text', btnNames{k}, ...
         'ButtonPushedFcn', @(btn,event) saveWaveforms(fileNames{k}));
+end
+
+function onPatchOrThreshChange()
+    updateDisplays();
+    updateFlowPlane();
+    % Update waveforms only if clicked point exists
+    if ~isempty(clickedX) && ~isempty(clickedY)
+        updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
+    end
 end
 
 function keyControl(~, event)
@@ -225,7 +266,7 @@ function closeApp(~, ~)
         % Force garbage collection
         drawnow;
         pause(0.05);
-        clearvars -except LOCAL group users user wrap2 niid base_dir
+        clearvars -except LOCAL group users user wrap2 BASEPATH
         fprintf('GUI closed and memory cleared.\n');
     catch ME
         warning('Error during GUI close: %s', ME.message);
@@ -267,11 +308,13 @@ clickableAxes = [];
         fig.Name = ['4D CSF Flow Viewer | ' subjname];
 
         % TODO load from SERVER - can we save D to server first also? 
-        subjectFolder = fullfile(base_dir, subjname, 'processed');
+        subjectFolder = fullfile(BASEPATH, subjname, 'processed');
         cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dT2.nii'); 
-        dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat');
-        load(dmatfile, 'D');
-        distMatFile = fullfile(baseparent, 'CSFmasks', subjname, 'distMat.mat');
+        dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); % NOT USED ATM
+        if exist(dmatfile, 'file')
+            load(dmatfile, 'D');
+        end
+        distMatFile = fullfile(baseparent, 'CSFmasks', subjname, 'distMat.mat'); % NOT USED ATM
         if exist(distMatFile, 'file')
             load(distMatFile, 'distMat'); % distance over branchMat branches
             data.distMat = distMat;
@@ -284,22 +327,37 @@ clickableAxes = [];
         end
 
         if LOCAL
-            rvelsfolder = fullfile('/Users/txv016/Documents/BRAINVELS', subjname, 'brainvels');
+            fvelsfolder = fullfile(LOCALVELS, subjname, 'fullvels');
+            rvelsfolder = fullfile(LOCALVELS, subjname, 'brainvels'); % PRE MASKED TO REDUCE LOADING SIZE  
             disp('Loading from LOCAL brainvels folder')
         else
-            rvelsfolder = fullfile(subjectFolder, 'brainvels');
+            fvelsfolder = fullfile(subjectFolder, 'fullvels');
+            rvelsfolder = fullfile(subjectFolder, 'brainvels'); % PRE MASKED TO REDUCE LOADING SIZE 
             disp('Loading from REMOTE brainvels folder')
         end
-        load([rvelsfolder, '/rx.mat'], 'rx');
-        load([rvelsfolder, '/ry.mat'], 'ry');
-        load([rvelsfolder, '/rz.mat'], 'rz');
-        load([rvelsfolder, '/roi.mat'], 'roi');
-        data.vx = rx;
-        data.vy = ry;
-        data.vz = rz;
 
         data.mag = MRIread(magfile).vol;
         data.cube = MRIread(cubefile).vol;
+
+        if strcmp(LOADMODE, 'MASK')
+            load([rvelsfolder, '/rx.mat'], 'rx');
+            load([rvelsfolder, '/ry.mat'], 'ry');
+            load([rvelsfolder, '/rz.mat'], 'rz');
+            load([rvelsfolder, '/roi.mat'], 'roi');
+            data.vx = rx;
+            data.vy = ry;
+            data.vz = rz;
+        elseif strcmp(LOADMODE, 'FULL') % TEMP ZAYNAB: THIS LOAD IF NOT PREMASKED VELS (if .nii, might need to rotate, etc.)
+            load([fvelsfolder, '/vx.mat'], 'vx');
+            load([fvelsfolder, '/vy.mat'], 'vy');
+            load([fvelsfolder, '/vz.mat'], 'vz');
+            [nx, ny, nz, nt] = size(vx); % CORRECT DIMS?  
+            data.vx = reshape(vx, nx*ny*nz, nt);
+            data.vy = reshape(vy, nx*ny*nz, nt);
+            data.vz = reshape(vz, nx*ny*nz, nt);
+            data.roi = ones(size(data.mag));
+        end
+
         % TEMP: adding FS seg instead of distance for CA definition? 
         aafile = fullfile(subjectFolder, 'FSproc', 'aa_nn4d.nii.gz');
         try
@@ -311,8 +369,7 @@ clickableAxes = [];
 
         data.mag = imrotate(data.mag, -90);
         data.cube = imrotate(data.cube, -90);
-        data.dist = flip(D, 2);
-        % data.roi = flip(roi, 2);
+        data.dist = flip(D, 2); % NOT USED ATM
         data.roi = roi;
 
         % Global ROI and within-ROI velocities
@@ -345,7 +402,8 @@ clickableAxes = [];
         currentFrame = 1; % Start at first frame
 
         % TEMP: taking from updateDisplays to here
-        clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
+        % clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
+        clickableAxes = [ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
         linkaxes([ax(2,1), ax(2,2), ax(2,3)], 'xy');
 
         updateDisplays();
@@ -572,16 +630,18 @@ clickableAxes = [];
         local_thresh = str2double(thrDropdown.Value);
 
         % *** SPECIFY IN TOP OF GUI *** 
-        if SASMODE
+        if strcmp(SHAPEMODE, 'RECT')
             SEGMODE = 'cube'; % alternative, rms or cube
-            SHAPE = 'RECT';
             [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPE);
-        else
+                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
+        elseif strcmp(SHAPEMODE, 'CIRC')
             SEGMODE = 'mixed'; % alternative, rms or cube
-            SHAPE = 'CIRC';
             [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPE);
+                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
+        elseif strcmp(SHAPEMODE, 'ANY') % TEMP: use mixed for any 
+            SEGMODE = 'mixed'; % alternative, rms or cube
+            [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
+                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
         end
 
         data.proj2D = proj2D.proj;
@@ -620,7 +680,7 @@ clickableAxes = [];
         % Local CS
         imagesc(ax(1,2), cube_patch);
         axis(ax(1,2), 'image');
-        title(ax(1,2), 'Flow plane: cube');
+        title(ax(1,2), 'Flow plane: T2 CUBE');
         colormap(ax(1,2), gray);
         hold(ax(1,2), 'on');
         visboundaries(ax(1,2), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
@@ -641,23 +701,32 @@ clickableAxes = [];
 
         % Clear and prepare left axis
         cla(ax(3,2), 'reset');
-        yyaxis(ax(3,2), 'left');
-        hold(ax(3,2), 'on');
 
-        plot(ax(3,2), zscore(pc1), 'c--', 'LineWidth', 1.5); %#ok<*UNRCH>
-        plot(ax(3,2), zscore(PC1), 'b-', 'LineWidth', 1.5); %#ok<*UNRCH>
-        ylabel(ax(3,2), 'PCA vel. (z-score)');
-
-        % Right Y-axis: Flow through plane
-        yyaxis(ax(3,2), 'right');
-        hold(ax(3,2), 'on'); % need to reapply hold on for each axis?
-        plot(ax(3,2), flow, 'Color', 'r', 'LineWidth', 1.5);
-        ylabel(ax(3,2), 'Flow rate (ml/s)');
-
-        % Final touches
-        title(ax(3,2), sprintf('PC1 dir: [%.2f  %.2f  %.2f]', direction.pca(1), direction.pca(2), direction.pca(3)));
-        % xlabel(ax(3,2), 'Frame');
-        legend(ax(3,2), 'Voxel PCA', 'Volume PCA', 'CS flow rate')
+        if strcmp(WFSHOWMODE, 'ALL')
+            yyaxis(ax(3,2), 'left');
+            hold(ax(3,2), 'on');
+    
+            plot(ax(3,2), zscore(pc1), 'c--', 'LineWidth', 1.5); %#ok<*UNRCH> % voxel PCA 
+            plot(ax(3,2), zscore(PC1), 'b-', 'LineWidth', 1.5); %#ok<*UNRCH> % volume PCA 
+            ylabel(ax(3,2), 'PCA vel. (z-score)');
+    
+            % Right Y-axis: Flow through plane
+            yyaxis(ax(3,2), 'right');
+            hold(ax(3,2), 'on'); % need to reapply hold on for each axis?
+            plot(ax(3,2), flow, 'Color', 'r', 'LineWidth', 1.5);
+            ylabel(ax(3,2), 'Flow rate (ml/s)');
+    
+            % Final touches
+            title(ax(3,2), sprintf('PC-1 dir: [%.2f  %.2f  %.2f]', direction.pca(1), direction.pca(2), direction.pca(3)));
+            % xlabel(ax(3,2), 'Frame');
+            legend(ax(3,2), 'Voxel PCA', 'Volume PCA', 'Through-plane flow')
+        elseif strcmp(WFSHOWMODE, 'FLOW') % Just show the through-plane flow rate waveforms
+            hold(ax(3,2), 'on'); % need to reapply hold on for each axis?
+            plot(ax(3,2), flow, 'Color', 'r', 'LineWidth', 1.5);
+            ylabel(ax(3,2), 'Flow rate (ml/s)');
+            title(ax(3,2), sprintf('PC-1 dir: [%.2f  %.2f  %.2f]', direction.pca(1), direction.pca(2), direction.pca(3)));
+            legend(ax(3,2), 'Through-plane flow')
+        end
 
         % Plot coronal RMS view in ax(1,3)
         cla(ax(2,4), 'reset');
@@ -822,13 +891,56 @@ clickableAxes = [];
         updateFlowPlane();
     end
 
+    function toggleLOADMODE()
+        if strcmp(LOADMODE, 'MASK')
+            LOADMODE = 'FULL';
+            mvBtn.Text = 'Load Mode: Full';
+        elseif strcmp(LOADMODE, 'FULL')
+            LOADMODE = 'MASK';
+            mvBtn.Text = 'Load Mode: Masked';
+        end
+    end
+
     function toggleDIRMODE()
         if strcmp(DIRMODE, 'pca')
             DIRMODE = 'man';
-            dirBtn.Text = 'DIRMODE: Manual';
+            dirBtn.Text = 'DIRECTION: Manual';
         else
             DIRMODE = 'pca';
-            dirBtn.Text = 'DIRMODE: PCA';
+            dirBtn.Text = 'DIRECTION: PCA';
+        end
+
+        % Update flow-plane and waveforms if a point is selected
+        if ~isempty(clickedX) && ~isempty(clickedY)
+            updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
+        end
+    end
+
+    function toggleSHAPEMODE()
+        if strcmp(SHAPEMODE, 'CIRC')
+            SHAPEMODE = 'RECT';
+            shapeBtn.Text = 'SHAPE: Rect.';
+        elseif strcmp(SHAPEMODE, 'RECT')
+            SHAPEMODE = 'ANY';
+            shapeBtn.Text = 'SHAPE: Any';
+        elseif strcmp(SHAPEMODE, 'ANY')
+            SHAPEMODE = 'CIRC';
+            shapeBtn.Text = 'SHAPE: Circular';
+        end
+
+        % Update flow-plane and waveforms if a point is selected
+        if ~isempty(clickedX) && ~isempty(clickedY)
+            updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
+        end
+    end
+
+    function toggleWFSHOWMODE()
+        if strcmp(WFSHOWMODE, 'ALL')
+            WFSHOWMODE = 'FLOW';
+            wfsBtn.Text = 'WF vis: Flow only';
+        elseif strcmp(WFSHOWMODE, 'FLOW')
+            WFSHOWMODE = 'ALL';
+            wfsBtn.Text = 'WF vis: Flow + PCA';
         end
 
         % Update flow-plane and waveforms if a point is selected
