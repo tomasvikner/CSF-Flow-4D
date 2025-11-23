@@ -7,6 +7,7 @@ function CSF_GUI
 
 % USER SETTINGS: EDIT BEFORE RUN
 LOCAL = true; 
+LOCAL = false;
 LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
 
 % Directory for saving waveforms in remote subject folder 
@@ -15,6 +16,7 @@ OUTFOLDER = 'TEMP';
 
 % PATH ON REMOTE SERVER
 BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
+BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/AF/';
 
 currentFrame = 1; % Track current frame
 maxFrame = 20;
@@ -173,7 +175,7 @@ segBtn.ButtonPushedFcn = @(btn, evt) toggleSEGMODE();
 
 WFSHOWMODE = 'ALL';
 wfsBtn = uibutton(fig, ...
-    'Text', 'WF vis: Flow + PCA', ...
+    'Text', 'WFVIS: Flow + PCA', ...
     'Position', [140, 775, 120, 30]);
 wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
 
@@ -214,10 +216,9 @@ btnGrid = uigridlayout(btnPanel, [8,1]);
 btnGrid.RowHeight = repmat({'1x'}, 1, 8);
 btnGrid.ColumnWidth = {'1x'};
 
-% TEMP edit: skip using LV for this anyway; add 2x CA + pCSF instead  
+% TEMP edit: skip LV buttons for now; add 2x CA + pCSF instead  
 % btnNames = {'Left LV', 'Right LV', 'Left FMo', 'Right FMo', '3rd Vent', 'C. Aqueduct', '4th Vent', 'Spinal Canal'};
 % fileNames = {'LLV.mat', 'RLV.mat', 'LFMo.mat', 'RFMo.mat', 'V3.mat', 'CA.mat', 'V4.mat', 'SC.mat'};
-
 btnNames = {'Left FMo', 'Right FMo', '3rd Vent', 'L. Aqueduct', 'U. Aqueduct', '4th Vent', 'Spinal Canal', 'Perivasc.'};
 fileNames = {'LFMo.mat', 'RFMo.mat', 'V3.mat', 'CAL.mat', 'CAU.mat', 'V4.mat', 'SC.mat', 'pCSF.mat'};
 
@@ -313,10 +314,17 @@ clickableAxes = [];
         baseparent = fileparts(foldername);
         fig.Name = ['4D CSF Flow Viewer | ' subjname];
 
-        % TODO load from SERVER - can we save D to server first also? 
+        % Load from server
         subjectFolder = fullfile(BASEPATH, subjname, 'processed');
+
+        % Orig
         cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dT2.nii'); 
         dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); % NOT USED ATM
+
+        % TEMP ZY: 
+        cubefile = fullfile(subjectFolder, 'r4dT2.nii'); 
+        cubefile = fullfile(subjectFolder, 'r4dAF.nii'); % ANTI FLAIR
+
         if exist(dmatfile, 'file')
             load(dmatfile, 'D');
         end
@@ -353,7 +361,7 @@ clickableAxes = [];
             data.vx = rx;
             data.vy = ry;
             data.vz = rz;
-        elseif strcmp(LOADMODE, 'FULL') % TEMP ZAYNAB: THIS LOAD IF NOT PREMASKED VELS (if .nii, might need to rotate, etc.)
+        elseif strcmp(LOADMODE, 'FULL') 
             load([fvelsfolder, '/vx.mat'], 'vx');
             load([fvelsfolder, '/vy.mat'], 'vy');
             load([fvelsfolder, '/vz.mat'], 'vz');
@@ -375,7 +383,7 @@ clickableAxes = [];
 
         data.mag = imrotate(data.mag, -90);
         data.CUBE = imrotate(data.CUBE, -90);
-        data.dist = flip(D, 2); % NOT USED ATM
+        % data.dist = flip(D, 2); % NOT USED ATM
         data.roi = roi;
 
         % Global ROI and within-ROI velocities
@@ -604,6 +612,7 @@ clickableAxes = [];
             return;
         end
 
+        % Voxel (in current coordinate) waveforms 
         vx_t = squeeze(data.vx(ind, :))';
         vy_t = squeeze(data.vy(ind, :))';
         vz_t = squeeze(data.vz(ind, :))';
@@ -615,6 +624,7 @@ clickableAxes = [];
         inds = data.imap(find(dilmap));
         inds(inds==0) = [];
 
+        % Speherical volume (around voxel) waveforms
         VX_t = squeeze(data.vx(inds, :))';
         VY_t = squeeze(data.vy(inds, :))';
         VZ_t = squeeze(data.vz(inds, :))';
@@ -635,20 +645,9 @@ clickableAxes = [];
         patch_width = str2double(szDropdown.Value);
         local_thresh = str2double(thrDropdown.Value);
 
-        % *** SPECIFY IN TOP OF GUI *** 
-        if strcmp(SHAPEMODE, 'RECT')
-            % SEGMODE = 'cube'; % alternative, rms or cube
-            [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
-        elseif strcmp(SHAPEMODE, 'CIRC')
-            % SEGMODE = 'mixed'; % alternative, rms or cube
-            [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
-        elseif strcmp(SHAPEMODE, 'ANY') % TEMP: use mixed for any 
-            % SEGMODE = 'mixed'; % alternative, rms or cube
-            [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-                extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
-        end
+        % *** SPECIFY SEG/DIR/SHAPE MODES IN TOP OF GUI *** 
+        [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
+            extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
 
         data.proj2D = proj2D.proj;
         data.velx2D = proj2D.velx;
@@ -763,7 +762,7 @@ clickableAxes = [];
 
     end
 
-    % TEMP voxel PCA or flow rate? 
+    % TEMP: Voxel/Volume PCA or flow rate for propagation delay? 
     function printDelay()
         d = dir(fullfile(savefolder, '*.mat'));
         nwf = numel(d);
@@ -779,6 +778,7 @@ clickableAxes = [];
         for i = 1:nwf
             wn = fullfile(savefolder, d(i).name);
             load(wn, 'WF');
+
             if contains(d(i).name, 'LV')
                 wf = WF.PC1;
             else 
@@ -830,7 +830,7 @@ clickableAxes = [];
                 wf = WF.flow';
             end
 
-            % Flip sign if negatively correlated with SC
+            % TEMP: Flip sign if negatively correlated with SC? 
             if ~isempty(sc)
                 if corr(sc, wf) < 0
                     wf = -wf;
@@ -958,10 +958,10 @@ clickableAxes = [];
     function toggleWFSHOWMODE()
         if strcmp(WFSHOWMODE, 'ALL')
             WFSHOWMODE = 'FLOW';
-            wfsBtn.Text = 'WF vis: Flow only';
+            wfsBtn.Text = 'WFVIS: Flow only';
         elseif strcmp(WFSHOWMODE, 'FLOW')
             WFSHOWMODE = 'ALL';
-            wfsBtn.Text = 'WF vis: Flow + PCA';
+            wfsBtn.Text = 'WFVIS: Flow + PCA';
         end
 
         % Update flow-plane and waveforms if a point is selected
