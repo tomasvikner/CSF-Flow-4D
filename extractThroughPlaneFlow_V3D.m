@@ -96,6 +96,11 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     vy_vals(idx_p, :) = data.vy(idx_r, :);
     vz_vals(idx_p, :) = data.vz(idx_r, :);
 
+    % TEST fix direction being off by -1 compared 4D data 
+    % vx_vals = -1*vx_vals;
+    % vy_vals = -1*vy_vals;
+    % vz_vals = -1*vz_vals;
+
     % Reshape to patch_width x patch_width x n_frames
     vx_frame = reshape(vx_vals, patch_width, patch_width, n_frames);
     vy_frame = reshape(vy_vals, patch_width, patch_width, n_frames);

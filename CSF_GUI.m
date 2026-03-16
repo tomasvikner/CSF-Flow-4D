@@ -1,13 +1,17 @@
-% Load local vels in brainmask if LOCAL=true 
-% Save to server subject folders (BV_Waveforms)
-% Circularity constraint for CA (extractCircular)
-% - Should adapt this for larger ROIs, e.g., SC 
+% 4D CSF flow analysis tool 
+
+% TODO: export all frames from current flow-proj with button press 
 
 function CSF_GUI
 
+% ----------------------------SETTINGS---------------------------------- %
+
+% TEMP 
+ANTIFLAIRTEST = false;
+
 % USER SETTINGS: EDIT BEFORE RUN
 LOCAL = true; 
-LOCAL = false;
+% LOCAL = false; % Load local vels within brainmask if LOCAL=true 
 LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
 
 % Directory for saving waveforms in remote subject folder 
@@ -15,15 +19,27 @@ LOCALVELS = '/Users/txv016/Documents/BRAINVELS';
 OUTFOLDER = 'TEMP';
 
 % PATH ON REMOTE SERVER
+TTL22 = 'T2 CUBE';
 BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
-BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/AF/';
+
+% if ANTIFLAIRTEST % Test Zaynab PSD 
+%     BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/AF/';
+%     TTL22 = 'anti-FLAIR';
+% end
+
+% AX21 = 'T1';
+% AX21 = 'FST1'; 
+% AX21 = 'dist'; 
+% AX21 = 'VENTS'; 
+AX21 = 'MAG'; % If not specified, 4D-MAG vill be placed in ax(2,1)
+
+addpath('/Users/txv016/Documents/MATLAB/Freesurfer Tools')
+
+% ---------------------------------------------------------------------- %
 
 currentFrame = 1; % Track current frame
 maxFrame = 20;
 scatterHandles = [];
-
-% TEMP 
-addpath('/Users/txv016/Documents/MATLAB/Freesurfer Tools')
 
 delete(findall(0, 'Type', 'figure', 'Name', '4D CSF Flow Viewer'));
 
@@ -140,6 +156,11 @@ playBtn = uibutton(fig, ...
     'Text', 'Loop', ...
     'Position', [830, 835, 55, 30]);
 playBtn.ButtonPushedFcn = @(btn, evt) togglePlay();
+
+exportBtn = uibutton(fig, ...
+    'Text', 'Export', ...
+    'Position', [830, 805, 55, 30]);
+exportBtn.ButtonPushedFcn = @(btn, evt) exportProj();
 
 savedBtn = uibutton(fig, ... % show saved
     'Text', 'Show Saved', ...
@@ -293,14 +314,15 @@ flowArrow = [];
 clickedX = [];
 clickedY = [];
 
-% rms_clim = [];
-mix_clim = [];
+seg_clim = [];
 
 subjectFolder = ''; % To store folder path from loadData
 savefolder = '';
 WF = [];
 
 clickableAxes = [];
+
+subjname = [];
 
 % *** LOAD DATA ***
     function loadData()
@@ -313,31 +335,31 @@ clickableAxes = [];
         [foldername, subjname] = fileparts(subjectFolder);
         baseparent = fileparts(foldername);
         fig.Name = ['4D CSF Flow Viewer | ' subjname];
+        disp(['Loading ' subjname]);
 
         % Load from server
         subjectFolder = fullfile(BASEPATH, subjname, 'processed');
 
         % Orig
+        magfile = fullfile(subjectFolder, 'MAG.nii');
         cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dT2.nii'); 
-        dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); % NOT USED ATM
+        dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); 
 
         % TEMP ZY: 
-        cubefile = fullfile(subjectFolder, 'r4dT2.nii'); 
-        cubefile = fullfile(subjectFolder, 'r4dAF.nii'); % ANTI FLAIR
-
-        if exist(dmatfile, 'file')
-            load(dmatfile, 'D');
+        if ANTIFLAIRTEST
+            cubefile = fullfile(subjectFolder, 'r4dT2.nii'); 
+            cubefile = fullfile(subjectFolder, 'r4dAF.nii'); % ANTI FLAIR
         end
-        distMatFile = fullfile(baseparent, 'CSFmasks', subjname, 'distMat.mat'); % NOT USED ATM
-        if exist(distMatFile, 'file')
-            load(distMatFile, 'distMat'); % distance over branchMat branches
-            data.distMat = distMat;
-        end
-        magfile = fullfile(subjectFolder, 'MAG.nii');
 
+        % TEMP WRAP CA analysis 
         savefolder = fullfile(subjectFolder, OUTFOLDER);
         if ~exist(savefolder, 'dir')
             mkdir(savefolder);
+            disp(['Outfolder created: ' savefolder])
+        elseif exist([savefolder '/CAU.mat'], 'file')
+            disp('CAU.mat already exists')
+        else
+            disp('Outfolder but not CAU.mat exists')
         end
 
         if LOCAL
@@ -352,6 +374,8 @@ clickableAxes = [];
 
         data.mag = MRIread(magfile).vol;
         data.CUBE = MRIread(cubefile).vol;
+        data.mag = imrotate(data.mag, -90);
+        data.CUBE = imrotate(data.CUBE, -90);
 
         if strcmp(LOADMODE, 'MASK')
             load([rvelsfolder, '/rx.mat'], 'rx');
@@ -372,44 +396,61 @@ clickableAxes = [];
             data.roi = ones(size(data.mag));
         end
 
-        % TEMP: adding FS seg instead of distance for CA definition? 
+        % TEMP: adding T1-w and FS seg instead of distance for CA definition? 
         aafile = fullfile(subjectFolder, 'FSproc', 'aa_nn4d.nii.gz');
+        t1file = fullfile(subjectFolder, 'FSproc', 'T1_nn4d.nii.gz');
         try
+            data.T1 = MRIread(t1file).vol;
+            data.T1 = imrotate(data.T1, -90);
             data.aa = MRIread(aafile).vol;
             data.aa = imrotate(data.aa, -90);
         catch
+            data.T1 = zeros(size(data.mag));
             data.aa = zeros(size(data.mag));
         end
 
-        data.mag = imrotate(data.mag, -90);
-        data.CUBE = imrotate(data.CUBE, -90);
-        % data.dist = flip(D, 2); % NOT USED ATM
+        % If exists, load CSF geodesic distance (might need flip/rotation)
+        try
+            load(dmatfile, 'D')
+            data.dist = D;
+        catch
+            data.dist = zeros(size(data.mag));
+        end
+
         data.roi = roi;
 
         % Global ROI and within-ROI velocities
-        % data.groi = data.dist > 0; % uu, data.dist is modified from roi
         data.groi = data.roi > 0;
         data.ginds = find(data.groi(:));
         data.imap = zeros(size(data.groi));
         data.imap(data.ginds) = 1:numel(data.ginds);
         data.imap = flip(data.imap, 2);
 
-        % TODO: filter before rms; also maybe do vstd, reduce BG errors 
+        % TODO: filter before rms? also maybe do vstd, reduce BG errors (or keep rms to better see BG errors)
         data.rms = zeros(size(data.imap));
         data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
         data.rms = flip(data.rms, 2);
         data.MIXED = data.rms.*data.CUBE;
 
-        % TEMP: show vents instead of CSF dist when segmenting CA 
-        VENTS = ismember(data.aa, [14 15 4 5 44 45]);
-        data.dist = VENTS; 
+        % OPTIONAL DATA IN AX21
+        data.VENTS = ismember(data.aa, [14 15 4 5 44 45]);
+        disp(['AX21: ' AX21])
+        if strcmp(AX21, 'T1')
+            data.ax21 = data.T1; 
+        elseif  strcmp(AX21, 'FST1')
+            data.ax21 = data.T1 + ( data.VENTS * 0.5 * max(data.T1(:)) ); % TEMP 
+        elseif strcmp(AX21, 'VENTS')
+            data.ax21 = data.VENTS; 
+        elseif strcmp(AX21, 'DIST')
+            data.ax21 = data.dist; % CSF geodesic distance (spinal-to-cranial) 
+        else
+            data.ax21 = data.mag;
+        end
 
-        % Set display limits
-        rms_clim = [0, 0.25 * max(data.rms(:))];
-        % mix_clim = [0, 0.25 * max(data.MIXED(:))];
-        mix_clim = [0, 0.15 * max(data.MIXED(:))];
+        seg_max = 0.5; % Display limits in ax 2,3
+        seg_clim = [0, seg_max * max(data.(SEGMODE)(:))];
 
-        [~, ~, zres] = size(data.rms);
+        [~, ~, zres] = size(data.(SEGMODE));
         s_slice.Limits = [1 zres];
         s_slice.Value = round(zres/2);
 
@@ -440,25 +481,16 @@ clickableAxes = [];
             marker = [];
         end
 
-        if isfield(data, 'distMat') && ~isempty(data.distMat)
-            imagesc(ax(1,1), squeeze(data.distMat(:,:,slice))');
-            axis(ax(1,1), 'image');
-            title(ax(1,1), 'Centerline');
-        end
-
-        % TEMP: move to load function 
-        % linkaxes([ax(2,1), ax(2,2), ax(2,3)], 'xy');
-
         % TEMP: no zoom state preserve
         prevLim = axis(ax(2,1));  % Save zoom state
         cla(ax(2,1));
-        imagesc(ax(2,1), squeeze(data.dist(:,:,slice))');
+        imagesc(ax(2,1), squeeze(data.ax21(:,:,slice))');
         if ~isequal(prevLim, [0 1 0 1])  % If zoomed, restore view
             axis(ax(2,1), prevLim);
         else
             axis(ax(2,1), 'image');
         end
-        title(ax(2,1), 'FS ROIs'); 
+        title(ax(2,1), AX21); 
 
         prevLim = axis(ax(2,2));  % Save zoom state
         cla(ax(2,2));
@@ -468,7 +500,7 @@ clickableAxes = [];
         else
             axis(ax(2,2), 'image');
         end
-        title(ax(2,2), 'T2 CUBE'); 
+        title(ax(2,2), TTL22); 
 
         prevLim = axis(ax(2,3));  % Save zoom state
         cla(ax(2,3));
@@ -483,8 +515,8 @@ clickableAxes = [];
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, slice);
         end
-        title(ax(2,3), 'CUBE x RMS velocity'); 
-        clim(ax(2,3), mix_clim); 
+        title(ax(2,3), [TTL22 '\times VSTD']); 
+        clim(ax(2,3), seg_clim); 
 
         % TEMP: move to load function 
         % clickableAxes = [ax(1,1), ax(1,2), ax(1,3), ax(2,1), ax(2,2), ax(2,3), ax(1,3)];
@@ -664,7 +696,8 @@ clickableAxes = [];
             delete(flowArrow);
             flowArrow = [];
         end
-        dir_xy = -direction.(DIRMODE)([2, 3]);  % vy (x), vz (z)
+        dir_xy = direction.(DIRMODE)([2, 3]); % DIR should not be -1 -- reverse arrow compared to initial code
+        % dir_xy = -direction.(DIRMODE)([2, 3]);  % vy (x), vz (z)
         arrowLength = 15;
         if norm(dir_xy) > 0
             dir_xy = dir_xy / norm(direction.(DIRMODE)) * arrowLength;
@@ -685,7 +718,7 @@ clickableAxes = [];
         % Local CS
         imagesc(ax(1,2), cube_patch);
         axis(ax(1,2), 'image');
-        title(ax(1,2), 'Flow plane: T2 CUBE');
+        title(ax(1,2), ['Flow plane: ' TTL22]);
         colormap(ax(1,2), gray);
         hold(ax(1,2), 'on');
         visboundaries(ax(1,2), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
@@ -696,7 +729,14 @@ clickableAxes = [];
         % Local CS
         imagesc(ax(1,3), patch);
         axis(ax(1,3), 'image');
-        title(ax(1,3), ['Flow plane: ' SEGMODE]);
+
+        if strcmp(SEGMODE, 'CUBE') %#ok<*IFBDUP>
+            % title(ax(1,3), ['Flow plane: ' TTL2]);
+            title(ax(1,3), ['Flow plane: ' SEGMODE]);
+        else
+            title(ax(1,3), ['Flow plane: ' SEGMODE]);
+        end
+
         colormap(ax(1,3), gray);
         hold(ax(1,3), 'on');
         visboundaries(ax(1,3), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
@@ -745,7 +785,7 @@ clickableAxes = [];
         imagesc(ax(2,4), cor);
         axis(ax(2,4), 'image');
         colormap(ax(2,4), gray);
-        title(ax(2,4), 'CUBE \times RMS (coronal)');
+        title(ax(2,4), [TTL22 '\times VSTD (coronal)']);
         clim(ax(2,4), [0, 1.0 * max(data.CUBE(:))]);
         hold(ax(2,4), 'on');
 
@@ -753,7 +793,7 @@ clickableAxes = [];
         dir_xz = direction.(DIRMODE)([1, 3]);  % vx and vz components
         dir_xz = dir_xz / norm(direction.pca) * 10;  % scale for visibility
 
-        quiver(ax(2,4), z, (nz/2) - 1, dir_xz(1), -dir_xz(2), ...
+        quiver(ax(2,4), z, (nz/2) - 1, dir_xz(1), dir_xz(2), ...
             'Color', 'r', 'LineWidth', 1.5, 'AutoScale', 'off', 'MaxHeadSize', 1.5);
 
         hold(ax(1,3), 'off');
@@ -895,6 +935,22 @@ clickableAxes = [];
             currentFrame = 1;
         end
         updateFlowPlane();
+    end
+
+    % Feb 2026: simple export of current ROI data with user-defined name
+    function exportProj()
+        proj2D = [];
+        proj2D.tvel = data.proj2D;
+        proj2D.patch = data.patch;
+        proj2D.bseg = data.bseg;
+        proj2D.flow = data.flow'; 
+        proj2D.pc1 = data.pc1;
+        if ~exist('EXPORT', 'dir')
+            mkdir('EXPORT');
+        end
+        savename = input('Enter save name (e.g., CA): ', 's');
+        fname = fullfile('EXPORT', sprintf('%s-%s.mat', savename, subjname));
+        save(fname, 'proj2D');
     end
 
     function toggleLOADMODE()
