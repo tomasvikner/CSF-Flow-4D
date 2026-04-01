@@ -6,21 +6,29 @@ function CSF_GUI
 
 % ----------------------------SETTINGS---------------------------------- %
 
-% TEMP 
-ANTIFLAIR = false;
+% *** Use anti-FLAIR instead of T2 CUBE *** 
+ANTIFLAIR = true;
 
-% USER SETTINGS: EDIT BEFORE RUN
-LOCAL = true; 
-% LOCAL = false; % Load local vels within brainmask if LOCAL=true 
+% *** if false: Load velocities from Radiology instead of local *** 
+LOCAL = false; 
 LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
 
-% Directory for saving waveforms in remote subject folder 
-% OUTFOLDER = 'BV_Waveforms'; % WRAP 2025 U/L CA 
-OUTFOLDER = 'TEMP';
+% *** SET THIS TO YOUR OWN BASE PATH INCLUDING ALL MRI DATA *** 
+BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; 
 
-% PATH ON REMOTE SERVER
-TTL22 = 'T2 CUBE';
-BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
+% *** SPECIFY OUTFOLDER FOR SAVING WAVEFORMS *** 
+if ANTIFLAIR
+    OUTFOLDER = 'AF2026';
+else
+    OUTFOLDER = 'TEMP';
+end
+
+% Title for ax(2, 2) 
+if ANTIFLAIR
+    TTL22 = 'anti-FLAIR';
+else
+    TTL22 = 'T2 CUBE'; 
+end
 
 % AX21 = 'T1';
 % AX21 = 'FST1'; 
@@ -380,9 +388,12 @@ subjname = [];
             data.vy = ry;
             data.vz = rz;
         elseif strcmp(LOADMODE, 'FULL') 
-            load([fvelsfolder, '/vx.mat'], 'vx');
-            load([fvelsfolder, '/vy.mat'], 'vy');
-            load([fvelsfolder, '/vz.mat'], 'vz');
+            load([fvelsfolder, '/rx.mat'], 'rx');
+            load([fvelsfolder, '/ry.mat'], 'ry');
+            load([fvelsfolder, '/rz.mat'], 'rz');
+            data.vx = rx;
+            data.vy = ry;
+            data.vz = rz;
             [nx, ny, nz, nt] = size(vx); % CORRECT DIMS?  
             data.vx = reshape(vx, nx*ny*nz, nt);
             data.vy = reshape(vy, nx*ny*nz, nt);
