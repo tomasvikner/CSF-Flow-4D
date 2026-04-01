@@ -7,7 +7,7 @@ function CSF_GUI
 % ----------------------------SETTINGS---------------------------------- %
 
 % TEMP 
-ANTIFLAIRTEST = false;
+ANTIFLAIR = false;
 
 % USER SETTINGS: EDIT BEFORE RUN
 LOCAL = true; 
@@ -21,11 +21,6 @@ OUTFOLDER = 'TEMP';
 % PATH ON REMOTE SERVER
 TTL22 = 'T2 CUBE';
 BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
-
-% if ANTIFLAIRTEST % Test Zaynab PSD 
-%     BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/AF/';
-%     TTL22 = 'anti-FLAIR';
-% end
 
 % AX21 = 'T1';
 % AX21 = 'FST1'; 
@@ -346,9 +341,8 @@ subjname = [];
         dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); 
 
         % TEMP ZY: 
-        if ANTIFLAIRTEST
-            cubefile = fullfile(subjectFolder, 'r4dT2.nii'); 
-            cubefile = fullfile(subjectFolder, 'r4dAF.nii'); % ANTI FLAIR
+        if ANTIFLAIR
+            cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dAF.nii'); % ANTI FLAIR
         end
 
         % TEMP WRAP CA analysis 
