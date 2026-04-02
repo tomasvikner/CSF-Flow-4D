@@ -8,6 +8,7 @@ function CSF_GUI
 
 % *** Use anti-FLAIR instead of T2 CUBE *** 
 ANTIFLAIR = true;
+OLDRMS = false; % 04/02/26: remove old RMS calc, load VSTD instead 
 
 % *** if false: Load velocities from Radiology instead of local *** 
 LOCAL = false; 
@@ -435,9 +436,16 @@ subjname = [];
         data.imap = flip(data.imap, 2);
 
         % TODO: filter before rms? also maybe do vstd, reduce BG errors (or keep rms to better see BG errors)
-        data.rms = zeros(size(data.imap));
-        data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
-        data.rms = flip(data.rms, 2);
+        if OLDRMS
+            data.rms = zeros(size(data.imap));
+            data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
+            data.rms = flip(data.rms, 2);
+        else
+            vstdfile = fullfile(subjectFolder, 'VSTD.nii.gz');
+            VSTD = MRIread(vstdfile).vol; % 040226: load VSTD instead of computing RMS
+            data.rms = VSTD;
+            data.rms = imrotate(data.rms, -90);
+        end
         data.MIXED = data.rms.*data.CUBE;
 
         % OPTIONAL DATA IN AX21
