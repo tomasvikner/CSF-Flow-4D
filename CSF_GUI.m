@@ -15,6 +15,7 @@ LOCALVELS = '/Users/txv016/Documents/BRAINVELS';
 
 % *** SET THIS TO YOUR OWN BASE PATH INCLUDING ALL MRI DATA *** 
 BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; 
+% BASEPATH = '/Volumes/groups/CVMRIGroup/Users/zsy001/anti-FLAIR/quant/niis/';
 
 % *** SPECIFY OUTFOLDER FOR SAVING WAVEFORMS *** 
 if ANTIFLAIR
@@ -387,17 +388,21 @@ subjname = [];
             data.vx = rx;
             data.vy = ry;
             data.vz = rz;
+            data.roi = roi;
         elseif strcmp(LOADMODE, 'FULL') 
             load([fvelsfolder, '/rx.mat'], 'rx');
+            disp('rx velocity loaded')
             load([fvelsfolder, '/ry.mat'], 'ry');
+            disp('ry velocity loaded')
             load([fvelsfolder, '/rz.mat'], 'rz');
+            disp('rz velocity loaded')
             data.vx = rx;
             data.vy = ry;
             data.vz = rz;
-            [nx, ny, nz, nt] = size(vx); % CORRECT DIMS?  
-            data.vx = reshape(vx, nx*ny*nz, nt);
-            data.vy = reshape(vy, nx*ny*nz, nt);
-            data.vz = reshape(vz, nx*ny*nz, nt);
+            % [nx, ny, nz, nt] = size(rx); % CORRECT DIMS?  
+            % data.vx = reshape(rx, nx*ny*nz, nt);
+            % data.vy = reshape(ry, nx*ny*nz, nt);
+            % data.vz = reshape(rz, nx*ny*nz, nt);
             data.roi = ones(size(data.mag));
         end
 
@@ -421,8 +426,6 @@ subjname = [];
         catch
             data.dist = zeros(size(data.mag));
         end
-
-        data.roi = roi;
 
         % Global ROI and within-ROI velocities
         data.groi = data.roi > 0;
