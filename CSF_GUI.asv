@@ -1,27 +1,35 @@
 % 4D CSF flow analysis tool 
 
+% TODO: export all frames from current flow-proj with button press 
+
 function CSF_GUI
 
 % ----------------------------SETTINGS---------------------------------- %
 
-% TEMP 
-ANTIFLAIRTEST = false;
+% *** Use anti-FLAIR instead of T2 CUBE *** 
+ANTIFLAIR = true;
+OLDRMS = false; % 04/02/26: remove old RMS calc, load VSTD instead 
 
-% USER SETTINGS: EDIT BEFORE RUN
+% *** if false: Load velocities from Radiology instead of local *** 
 LOCAL = true; 
-% LOCAL = false; % Load local vels in brainmask if LOCAL=true 
-LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
+LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; % This is only used if LOCAL is true 
 
-% Directory for saving waveforms in remote subject folder 
-OUTFOLDER = 'BV_Waveforms'; % WRAP 2025 U/L CA 
-% OUTFOLDER = 'TEMP';
+% *** SET THIS TO YOUR OWN BASE PATH INCLUDING ALL MRI DATA *** 
+BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; 
+% BASEPATH = '/Volumes/groups/CVMRIGroup/Users/zsy001/anti-FLAIR/quant/niis/';
 
-% PATH ON REMOTE SERVER
-TTL22 = 'T2 CUBE';
-BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
-if ANTIFLAIRTEST 
-    BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/AF/';
+% *** SPECIFY OUTFOLDER FOR SAVING WAVEFORMS *** 
+if ANTIFLAIR
+    OUTFOLDER = 'AF2026';
+else
+    OUTFOLDER = 'TEMP';
+end
+
+% Title for ax(2, 2) 
+if ANTIFLAIR
     TTL22 = 'anti-FLAIR';
+else
+    TTL22 = 'T2 CUBE'; 
 end
 
 % AX21 = 'T1';
@@ -154,6 +162,11 @@ playBtn = uibutton(fig, ...
     'Position', [830, 835, 55, 30]);
 playBtn.ButtonPushedFcn = @(btn, evt) togglePlay();
 
+exportBtn = uibutton(fig, ...
+    'Text', 'Export', ...
+    'Position', [830, 805, 55, 30]);
+exportBtn.ButtonPushedFcn = @(btn, evt) exportProj();
+
 savedBtn = uibutton(fig, ... % show saved
     'Text', 'Show Saved', ...
     'Position', [RBX, 270, 75, 30]);
@@ -191,6 +204,12 @@ wfsBtn = uibutton(fig, ...
     'Text', 'WFVIS: Flow + PCA', ...
     'Position', [140, 775, 120, 30]);
 wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
+
+CUBEMODE = 'CUBE';
+cubeBtn = uibutton(fig, ...
+    'Text', 'T2-w: CUBE', ...
+    'Position', [140, 745, 120, 30]);
+cubeBtn.ButtonPushedFcn = @(btn, evt) toggleCUBEAF();
 
 % X rotation
 yrpos = 845;
@@ -314,6 +333,8 @@ WF = [];
 
 clickableAxes = [];
 
+subjname = [];
+
 % *** LOAD DATA ***
     function loadData()
         basefolder = uigetdir();
@@ -325,6 +346,7 @@ clickableAxes = [];
         [foldername, subjname] = fileparts(subjectFolder);
         baseparent = fileparts(foldername);
         fig.Name = ['4D CSF Flow Viewer | ' subjname];
+        disp(['Loading ' subjname]);
 
         % Load from server
         subjectFolder = fullfile(BASEPATH, subjname, 'processed');
@@ -335,15 +357,19 @@ clickableAxes = [];
         dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); 
 
         % TEMP ZY: 
-        if ANTIFLAIRTEST
-            cubefile = fullfile(subjectFolder, 'r4dT2.nii'); 
-            cubefile = fullfile(subjectFolder, 'r4dAF.nii'); % ANTI FLAIR
+        if ANTIFLAIR
+            antiflairfile = fullfile(subjectFolder, 'cr2mag', 'r4dAF.nii'); % ANTI FLAIR
         end
 
+        % TEMP WRAP CA analysis 
         savefolder = fullfile(subjectFolder, OUTFOLDER);
         if ~exist(savefolder, 'dir')
             mkdir(savefolder);
-            disp([''])
+            disp(['Outfolder created: ' savefolder])
+        elseif exist([savefolder '/CAU.mat'], 'file')
+            disp('CAU.mat already exists')
+        else
+            disp('Outfolder but not CAU.mat exists')
         end
 
         if LOCAL
@@ -357,9 +383,19 @@ clickableAxes = [];
         end
 
         data.mag = MRIread(magfile).vol;
-        data.CUBE = MRIread(cubefile).vol;
+        data.T2CUBE = MRIread(cubefile).vol;
         data.mag = imrotate(data.mag, -90);
-        data.CUBE = imrotate(data.CUBE, -90);
+        data.CUBE = imrotate(data.T2CUBE, -90);
+
+        % Load both cube and AF, allow switch 
+        data.AF = MRIread(antiflairfile).vol;
+        data.AF = imrotate(data.AF, -90);
+        
+        if ANTIFLAIR
+            data.CUBE = data.AF;
+        else
+            data.CUBE = data.T2CUBE;
+        end
 
         if strcmp(LOADMODE, 'MASK')
             load([rvelsfolder, '/rx.mat'], 'rx');
@@ -369,14 +405,21 @@ clickableAxes = [];
             data.vx = rx;
             data.vy = ry;
             data.vz = rz;
-        elseif strcmp(LOADMODE, 'FULL') 
-            load([fvelsfolder, '/vx.mat'], 'vx');
-            load([fvelsfolder, '/vy.mat'], 'vy');
-            load([fvelsfolder, '/vz.mat'], 'vz');
-            [nx, ny, nz, nt] = size(vx); % CORRECT DIMS?  
-            data.vx = reshape(vx, nx*ny*nz, nt);
-            data.vy = reshape(vy, nx*ny*nz, nt);
-            data.vz = reshape(vz, nx*ny*nz, nt);
+            data.roi = roi;
+        elseif strcmp(LOADMODE, 'FULL') % Note these are still same format as masked velocities atm, just a mask of ones 
+            load([fvelsfolder, '/rx.mat'], 'rx');
+            disp('rx velocity loaded')
+            load([fvelsfolder, '/ry.mat'], 'ry');
+            disp('ry velocity loaded')
+            load([fvelsfolder, '/rz.mat'], 'rz');
+            disp('rz velocity loaded')
+            data.vx = rx;
+            data.vy = ry;
+            data.vz = rz;
+            % [nx, ny, nz, nt] = size(rx); % CORRECT DIMS?  
+            % data.vx = reshape(rx, nx*ny*nz, nt);
+            % data.vy = reshape(ry, nx*ny*nz, nt);
+            % data.vz = reshape(rz, nx*ny*nz, nt);
             data.roi = ones(size(data.mag));
         end
 
@@ -401,8 +444,6 @@ clickableAxes = [];
             data.dist = zeros(size(data.mag));
         end
 
-        data.roi = roi;
-
         % Global ROI and within-ROI velocities
         data.groi = data.roi > 0;
         data.ginds = find(data.groi(:));
@@ -411,9 +452,16 @@ clickableAxes = [];
         data.imap = flip(data.imap, 2);
 
         % TODO: filter before rms? also maybe do vstd, reduce BG errors (or keep rms to better see BG errors)
-        data.rms = zeros(size(data.imap));
-        data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
-        data.rms = flip(data.rms, 2);
+        if OLDRMS
+            data.rms = zeros(size(data.imap));
+            data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
+            data.rms = flip(data.rms, 2);
+        else
+            vstdfile = fullfile(subjectFolder, 'VSTD.nii.gz');
+            VSTD = MRIread(vstdfile).vol; % 040226: load VSTD instead of computing RMS
+            data.rms = VSTD;
+            data.rms = imrotate(data.rms, -90);
+        end
         data.MIXED = data.rms.*data.CUBE;
 
         % OPTIONAL DATA IN AX21
@@ -499,7 +547,7 @@ clickableAxes = [];
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, slice);
         end
-        title(ax(2,3), [TTL22 '\times VRMS']); 
+        title(ax(2,3), [TTL22 '\times VSTD']); 
         clim(ax(2,3), seg_clim); 
 
         % TEMP: move to load function 
@@ -680,7 +728,8 @@ clickableAxes = [];
             delete(flowArrow);
             flowArrow = [];
         end
-        dir_xy = -direction.(DIRMODE)([2, 3]);  % vy (x), vz (z)
+        dir_xy = direction.(DIRMODE)([2, 3]); % DIR should not be -1 -- reverse arrow compared to initial code
+        % dir_xy = -direction.(DIRMODE)([2, 3]);  % vy (x), vz (z)
         arrowLength = 15;
         if norm(dir_xy) > 0
             dir_xy = dir_xy / norm(direction.(DIRMODE)) * arrowLength;
@@ -713,8 +762,9 @@ clickableAxes = [];
         imagesc(ax(1,3), patch);
         axis(ax(1,3), 'image');
 
-        if strcmp(SEGMODE, 'CUBE')%#ok<*IFBDUP>
-            title(ax(1,3), ['Flow plane: ' TTL2]);
+        if strcmp(SEGMODE, 'CUBE') %#ok<*IFBDUP>
+            % title(ax(1,3), ['Flow plane: ' TTL2]);
+            title(ax(1,3), ['Flow plane: ' SEGMODE]);
         else
             title(ax(1,3), ['Flow plane: ' SEGMODE]);
         end
@@ -767,7 +817,7 @@ clickableAxes = [];
         imagesc(ax(2,4), cor);
         axis(ax(2,4), 'image');
         colormap(ax(2,4), gray);
-        title(ax(2,4), [TTL22 '\times VRMS (coronal)']);
+        title(ax(2,4), [TTL22 '\times VSTD (coronal)']);
         clim(ax(2,4), [0, 1.0 * max(data.CUBE(:))]);
         hold(ax(2,4), 'on');
 
@@ -775,7 +825,7 @@ clickableAxes = [];
         dir_xz = direction.(DIRMODE)([1, 3]);  % vx and vz components
         dir_xz = dir_xz / norm(direction.pca) * 10;  % scale for visibility
 
-        quiver(ax(2,4), z, (nz/2) - 1, dir_xz(1), -dir_xz(2), ...
+        quiver(ax(2,4), z, (nz/2) - 1, dir_xz(1), dir_xz(2), ...
             'Color', 'r', 'LineWidth', 1.5, 'AutoScale', 'off', 'MaxHeadSize', 1.5);
 
         hold(ax(1,3), 'off');
@@ -919,6 +969,22 @@ clickableAxes = [];
         updateFlowPlane();
     end
 
+    % Feb 2026: simple export of current ROI data with user-defined name
+    function exportProj()
+        proj2D = [];
+        proj2D.tvel = data.proj2D;
+        proj2D.patch = data.patch;
+        proj2D.bseg = data.bseg;
+        proj2D.flow = data.flow'; 
+        proj2D.pc1 = data.pc1;
+        if ~exist('EXPORT', 'dir')
+            mkdir('EXPORT');
+        end
+        savename = input('Enter save name (e.g., CA): ', 's');
+        fname = fullfile('EXPORT', sprintf('%s-%s.mat', savename, subjname));
+        save(fname, 'proj2D');
+    end
+
     function toggleLOADMODE()
         if strcmp(LOADMODE, 'MASK')
             LOADMODE = 'FULL';
@@ -975,6 +1041,25 @@ clickableAxes = [];
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
         end
+    end
+
+    % April 07, 2026, Zaynab switch CUBE/anti-FLAIR   
+    function toggleCUBEAF()
+        if strcmp(CUBEMODE, 'CUBE')
+            CUBEMODE = 'AF';
+            cubeBtn.Text = 'T2-w: anti-FLAIR';
+            data.CUBE = data.AF;
+            data.MIXED = data.rms.*data.CUBE;
+            TTL22 = 'anti-FLAIR';
+        elseif strcmp(CUBEMODE, 'AF')
+            CUBEMODE = 'CUBE';
+            cubeBtn.Text = 'T2-w: CUBE'; 
+            data.CUBE = data.T2CUBE;
+            data.MIXED = data.rms.*data.CUBE;
+            TTL22 = 'T2 CUBE';
+        end
+        updateDisplays();
+        updateFlowPlane();
     end
 
     function toggleWFSHOWMODE()

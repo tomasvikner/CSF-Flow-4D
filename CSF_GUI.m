@@ -11,8 +11,8 @@ ANTIFLAIR = true;
 OLDRMS = false; % 04/02/26: remove old RMS calc, load VSTD instead 
 
 % *** if false: Load velocities from Radiology instead of local *** 
-LOCAL = false; 
-LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; 
+LOCAL = true; 
+LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; % This is only used if LOCAL is true 
 
 % *** SET THIS TO YOUR OWN BASE PATH INCLUDING ALL MRI DATA *** 
 BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; 
@@ -205,6 +205,12 @@ wfsBtn = uibutton(fig, ...
     'Position', [140, 775, 120, 30]);
 wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
 
+CUBEMODE = 'CUBE';
+cubeBtn = uibutton(fig, ...
+    'Text', 'T2-w: CUBE', ...
+    'Position', [140, 745, 120, 30]);
+cubeBtn.ButtonPushedFcn = @(btn, evt) toggleCUBEAF();
+
 % X rotation
 yrpos = 845;
 hrotbox = 25;
@@ -352,7 +358,7 @@ subjname = [];
 
         % TEMP ZY: 
         if ANTIFLAIR
-            cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dAF.nii'); % ANTI FLAIR
+            antiflairfile = fullfile(subjectFolder, 'cr2mag', 'r4dAF.nii'); % ANTI FLAIR
         end
 
         % TEMP WRAP CA analysis 
@@ -377,9 +383,19 @@ subjname = [];
         end
 
         data.mag = MRIread(magfile).vol;
-        data.CUBE = MRIread(cubefile).vol;
+        data.T2CUBE = MRIread(cubefile).vol; % Now refer to the original T2 CUBE from cubefile
         data.mag = imrotate(data.mag, -90);
-        data.CUBE = imrotate(data.CUBE, -90);
+        data.T2CUBE = imrotate(data.T2CUBE, -90);
+
+        % Load both cube and AF, allow switch 
+        data.AF = MRIread(antiflairfile).vol;
+        data.AF = imrotate(data.AF, -90);
+        
+        if ANTIFLAIR % This is just for initial loading; shouldn't need to tho 
+            data.CUBE = data.AF; % Now keep data.CUBE as variable representing both AF and original T2 CUBE 
+        else
+            data.CUBE = data.T2CUBE;
+        end
 
         if strcmp(LOADMODE, 'MASK')
             load([rvelsfolder, '/rx.mat'], 'rx');
@@ -390,7 +406,7 @@ subjname = [];
             data.vy = ry;
             data.vz = rz;
             data.roi = roi;
-        elseif strcmp(LOADMODE, 'FULL') 
+        elseif strcmp(LOADMODE, 'FULL') % Note these are still same format as masked velocities atm, just a mask of ones 
             load([fvelsfolder, '/rx.mat'], 'rx');
             disp('rx velocity loaded')
             load([fvelsfolder, '/ry.mat'], 'ry');
@@ -1025,6 +1041,25 @@ subjname = [];
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
         end
+    end
+
+    % April 07, 2026, Zaynab switch CUBE/anti-FLAIR   
+    function toggleCUBEAF()
+        if strcmp(CUBEMODE, 'CUBE')
+            CUBEMODE = 'AF';
+            cubeBtn.Text = 'T2-w: anti-FLAIR';
+            data.CUBE = data.AF;
+            data.MIXED = data.rms.*data.CUBE;
+            TTL22 = 'anti-FLAIR';
+        elseif strcmp(CUBEMODE, 'AF')
+            CUBEMODE = 'CUBE';
+            cubeBtn.Text = 'T2-w: CUBE'; 
+            data.CUBE = data.T2CUBE;
+            data.MIXED = data.rms.*data.CUBE;
+            TTL22 = 'T2 CUBE';
+        end
+        updateDisplays();
+        updateFlowPlane();
     end
 
     function toggleWFSHOWMODE()
