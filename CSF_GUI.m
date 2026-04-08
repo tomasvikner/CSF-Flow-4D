@@ -609,6 +609,11 @@ subjname = [];
     end
 
     function saveWaveforms(filename)
+
+        if strcmp(CUBEMODE, 'AF')
+            filename = ['AF-' filename];
+        end
+
         if isempty(subjectFolder)
             uialert(fig, 'No subject folder loaded. Load data first.', 'Save Error');
             return;
@@ -650,10 +655,11 @@ subjname = [];
         WF.dist = data.dist(x, y, z);
         WF.patch = data.patch;
         WF.bseg = data.bseg; 
-        WF.size = str2num(szDropdown.Value);
+        WF.size = str2num(szDropdown.Value); %#ok<*ST2NM>
         WF.thr = str2num(thrDropdown.Value);
 
         save(fullfile(savefolder, filename), 'WF');
+        
         disp(['Saved waveforms to ', fullfile(savefolder, filename)]);
     end
 

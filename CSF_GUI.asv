@@ -383,16 +383,16 @@ subjname = [];
         end
 
         data.mag = MRIread(magfile).vol;
-        data.T2CUBE = MRIread(cubefile).vol;
+        data.T2CUBE = MRIread(cubefile).vol; % Now refer to the original T2 CUBE from cubefile
         data.mag = imrotate(data.mag, -90);
-        data.CUBE = imrotate(data.T2CUBE, -90);
+        data.T2CUBE = imrotate(data.T2CUBE, -90);
 
         % Load both cube and AF, allow switch 
         data.AF = MRIread(antiflairfile).vol;
         data.AF = imrotate(data.AF, -90);
         
-        if ANTIFLAIR
-            data.CUBE = data.AF;
+        if ANTIFLAIR % This is just for initial loading; shouldn't need to tho 
+            data.CUBE = data.AF; % Now keep data.CUBE as variable representing both AF and original T2 CUBE 
         else
             data.CUBE = data.T2CUBE;
         end
@@ -653,7 +653,9 @@ subjname = [];
         WF.size = str2num(szDropdown.Value);
         WF.thr = str2num(thrDropdown.Value);
 
-        save(fullfile(savefolder, filename), 'WF');
+        if ANTIFLAIR
+            save(fullfile(savefolder, filename), 'AFWF');
+
         disp(['Saved waveforms to ', fullfile(savefolder, filename)]);
     end
 
