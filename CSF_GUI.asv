@@ -7,7 +7,7 @@ function CSF_GUI
 % ----------------------------SETTINGS---------------------------------- %
 
 % *** Use anti-FLAIR instead of T2 CUBE *** 
-ANTIFLAIR = true;
+ANTIFLAIR = false;
 OLDRMS = false; % 04/02/26: remove old RMS calc, load VSTD instead 
 
 % *** if false: Load velocities from Radiology instead of local *** 
@@ -388,8 +388,12 @@ subjname = [];
         data.T2CUBE = imrotate(data.T2CUBE, -90);
 
         % Load both cube and AF, allow switch 
-        data.AF = MRIread(antiflairfile).vol;
-        data.AF = imrotate(data.AF, -90);
+        try
+            data.AF = MRIread(antiflairfile).vol;
+            data.AF = imrotate(data.AF, -90);
+        catch
+            disp('No anti-FLAIR found')
+        end
         
         if ANTIFLAIR % This is just for initial loading; shouldn't need to tho 
             data.CUBE = data.AF; % Now keep data.CUBE as variable representing both AF and original T2 CUBE 
@@ -609,6 +613,11 @@ subjname = [];
     end
 
     function saveWaveforms(filename)
+
+        if strcmp(CUBEMODE, 'AF')
+            filename = ['AF-' filename];
+        end
+
         if isempty(subjectFolder)
             uialert(fig, 'No subject folder loaded. Load data first.', 'Save Error');
             return;
@@ -650,12 +659,11 @@ subjname = [];
         WF.dist = data.dist(x, y, z);
         WF.patch = data.patch;
         WF.bseg = data.bseg; 
-        WF.size = str2num(szDropdown.Value);
+        WF.size = str2num(szDropdown.Value); %#ok<*ST2NM>
         WF.thr = str2num(thrDropdown.Value);
 
-        if ANTIFLAIR
-            save(fullfile(savefolder, filename), 'AFWF');
-
+        save(fullfile(savefolder, filename), 'WF');
+        
         disp(['Saved waveforms to ', fullfile(savefolder, filename)]);
     end
 
@@ -732,6 +740,7 @@ subjname = [];
         end
         dir_xy = direction.(DIRMODE)([2, 3]); % DIR should not be -1 -- reverse arrow compared to initial code
         % dir_xy = -direction.(DIRMODE)([2, 3]);  % vy (x), vz (z)
+        dir_xy(1) = - d
         arrowLength = 15;
         if norm(dir_xy) > 0
             dir_xy = dir_xy / norm(direction.(DIRMODE)) * arrowLength;

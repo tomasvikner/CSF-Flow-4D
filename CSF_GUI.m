@@ -7,7 +7,7 @@ function CSF_GUI
 % ----------------------------SETTINGS---------------------------------- %
 
 % *** Use anti-FLAIR instead of T2 CUBE *** 
-ANTIFLAIR = true;
+ANTIFLAIR = false;
 OLDRMS = false; % 04/02/26: remove old RMS calc, load VSTD instead 
 
 % *** if false: Load velocities from Radiology instead of local *** 
@@ -388,8 +388,12 @@ subjname = [];
         data.T2CUBE = imrotate(data.T2CUBE, -90);
 
         % Load both cube and AF, allow switch 
-        data.AF = MRIread(antiflairfile).vol;
-        data.AF = imrotate(data.AF, -90);
+        try
+            data.AF = MRIread(antiflairfile).vol;
+            data.AF = imrotate(data.AF, -90);
+        catch
+            disp('No anti-FLAIR found')
+        end
         
         if ANTIFLAIR % This is just for initial loading; shouldn't need to tho 
             data.CUBE = data.AF; % Now keep data.CUBE as variable representing both AF and original T2 CUBE 
@@ -831,7 +835,7 @@ subjname = [];
         dir_xz = direction.(DIRMODE)([1, 3]);  % vx and vz components
         dir_xz = dir_xz / norm(direction.pca) * 10;  % scale for visibility
 
-        quiver(ax(2,4), z, (nz/2) - 1, dir_xz(1), dir_xz(2), ...
+        quiver(ax(2,4), z, (nz/2) - 1, -dir_xz(1), dir_xz(2), ... % Why -dir_xz in the coronal plane? Seems correct tho 
             'Color', 'r', 'LineWidth', 1.5, 'AutoScale', 'off', 'MaxHeadSize', 1.5);
 
         hold(ax(1,3), 'off');
