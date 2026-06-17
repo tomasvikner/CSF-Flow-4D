@@ -6,12 +6,8 @@ function CSF_GUI
 
 % ----------------------------SETTINGS---------------------------------- %
 
-% *** Use anti-FLAIR instead of T2 CUBE *** 
-ANTIFLAIR = false;
-OLDRMS = false; % 04/02/26: remove old RMS calc, load VSTD instead 
-
 % *** if false: Load velocities from Radiology instead of local *** 
-LOCAL = true; 
+LOCAL = true; % Note: LOCAL might fail with load mode full if not rsynced
 LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; % This is only used if LOCAL is true 
 
 % *** SET THIS TO YOUR OWN BASE PATH INCLUDING ALL MRI DATA *** 
@@ -19,18 +15,7 @@ BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/';
 % BASEPATH = '/Volumes/groups/CVMRIGroup/Users/zsy001/anti-FLAIR/quant/niis/';
 
 % *** SPECIFY OUTFOLDER FOR SAVING WAVEFORMS *** 
-if ANTIFLAIR
-    OUTFOLDER = 'AF2026';
-else
-    OUTFOLDER = 'TEMP';
-end
-
-% Title for ax(2, 2) 
-if ANTIFLAIR
-    TTL22 = 'anti-FLAIR';
-else
-    TTL22 = 'T2 CUBE'; 
-end
+OUTFOLDER = 'TEMP';
 
 % AX21 = 'T1';
 % AX21 = 'FST1'; 
@@ -38,6 +23,7 @@ end
 % AX21 = 'VENTS'; 
 AX21 = 'MAG'; % If not specified, 4D-MAG vill be placed in ax(2,1)
 
+% TODO: better use niftiread (needs different rotation)
 addpath('/Users/txv016/Documents/MATLAB/Freesurfer Tools')
 
 % ---------------------------------------------------------------------- %
@@ -83,8 +69,10 @@ end
 RBX = 1120;
 RBH = 30; 
 RBW = 55;
+SEG_RBH = RBH - 5;      % seg dropdown height
+SEG_DY  = 2*RBH - 15;    % vertical step between seg dropdowns (was 2*RBH)
 
-LOADMODE = 'MASK';
+LOADMODE = 'MASKED';
 mvBtn = uibutton(fig, ...
     'Text', 'Load Mode: Masked', ...
     'Position', [15, 835, 120, 30]);
@@ -111,44 +99,68 @@ addlistener(s_slice,'ValueChanged',@(src,evt) updateFcn());
 fig.WindowKeyPressFcn = @keyControl;
 
 % Initiate segmentation buttons and set y-positions
-y1 = 730; 
-y2 = y1 - 2*RBH;
-y3 = y2 - 2*RBH;
+y1 = 750; 
+y2 = y1 - SEG_DY;
+y3 = y2 - SEG_DY;
+y4 = y3 - SEG_DY;
+y5 = y4 - SEG_DY;
 szDropdown = uidropdown(fig, ...
     'Items', {'15', '25', '35', '45', '55', '65', '75', '85', '95', '105', '115', '125'}, ...
-    'Value', '15', ...
-    'Position', [RBX, y1, RBW, RBH], ...
+    'Value', '25', ...
+    'Position', [RBX, y1, RBW, SEG_RBH], ...
     'Tooltip', 'Set Patch Width (voxels before interp.)');
 
 thrDropdown = uidropdown(fig, ...
     'Items', {'10', '20', '30', '40', '50', '60', '70'}, ...
-    'Value', '20', ...
-    'Position', [RBX, y2, RBW, RBH], ...
+    'Value', '30', ... % edit to 30 % standard threshold 
+    'Position', [RBX, y2, RBW, SEG_RBH], ...
     'Tooltip', 'Set Local Threshold (%)');
 
 cscDropdown = uidropdown(fig, ...
     'Items', {'10', '20', '30', '40', '50', '60', '70', '80', '90', '100'}, ...
     'Value', '80', ...
-    'Position', [RBX, y3, RBW, RBH], ...
+    'Position', [RBX, y3, RBW, SEG_RBH], ...
     'Tooltip', 'Set Velocity Range (%)');
+
+clipDropdown = uidropdown(fig, ...
+    'Items', {'Off', '90', '95', '99', '100'}, ...
+    'Value', '99', ...
+    'Position', [RBX, y4, RBW, SEG_RBH], ...
+    'Tooltip', 'Clip seg patch at percentile before threshold (Off = no clip)');
+
+dilateDropdown = uidropdown(fig, ...
+    'Items', {'0', '1', '2', '3'}, ...
+    'Value', '0', ...
+    'Position', [RBX, y5, RBW, SEG_RBH], ...
+    'Tooltip', 'Segmentation mask dilation radius (0 = off)');
 
 % Add labels for the dropdowns
 szLabel = uilabel(fig, ...
-    'Position', [RBX, y1+RBH, 55, 20], ...
+    'Position', [RBX, y1+SEG_RBH, 55, 20], ...
     'Text', 'SegWidth');
 
 thrLabel = uilabel(fig, ...
-    'Position', [RBX, y2+RBH, 55, 20], ...
+    'Position', [RBX, y2+SEG_RBH, 55, 20], ...
     'Text', 'Threshold');
 
 cscLabel = uilabel(fig, ...
-    'Position', [RBX, y3+RBH, 55, 20], ...
+    'Position', [RBX, y3+SEG_RBH, 55, 20], ...
     'Text', 'VelScale');
+
+clipLabel = uilabel(fig, ...
+    'Position', [RBX, y4+SEG_RBH, 55, 20], ...
+    'Text', 'ClipVal');
+
+dilateLabel = uilabel(fig, ...
+    'Position', [RBX, y5+SEG_RBH, 55, 20], ...
+    'Text', 'Dilate');
 
 thrDropdown.ValueChangedFcn = @(src, evt) updateFlowPlane();
 szDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
 thrDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
 cscDropdown.ValueChangedFcn = @(src, evt) togglePlay();
+clipDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
+dilateDropdown.ValueChangedFcn = @(src, evt) onPatchOrThreshChange();
 
 % Create dropdown and position it over ax(1,4)
 toggle = uidropdown(fig, ...
@@ -187,28 +199,29 @@ dirBtn = uibutton(fig, ...
     'Position', [140, 805, 120, 30]); % xpos swap 900 -> 120
 dirBtn.ButtonPushedFcn = @(btn, evt) toggleDIRMODE();
 
-SHAPEMODE = 'CIRC';
+SHAPEMODE = 'ANY'; % ANY has no effect 
 shapeBtn = uibutton(fig, ...
-    'Text', 'SHAPE: Circular', ...
+    'Text', 'SHAPE: Any', ...
     'Position', [140, 865, 120, 30]); % xpos swap 900 -> 120
 shapeBtn.ButtonPushedFcn = @(btn, evt) toggleSHAPEMODE();
 
-SEGMODE = 'MIXED';
+SEGMODE = 'VxVSTD';
 segBtn = uibutton(fig, ...
-    'Text', 'SEGVOL: Mixed', ...
+    'Text', 'SEGVOL: T2xVSTD', ...
     'Position', [140, 835, 120, 30]); % xpos swap 900 -> 120
 segBtn.ButtonPushedFcn = @(btn, evt) toggleSEGMODE();
 
-WFSHOWMODE = 'ALL';
+WFSHOWMODE = 'FLOW';
 wfsBtn = uibutton(fig, ...
-    'Text', 'WFVIS: Flow + PCA', ...
+    'Text', 'WFVIS: Flow only', ...
     'Position', [140, 775, 120, 30]);
 wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
 
 CUBEMODE = 'CUBE';
 cubeBtn = uibutton(fig, ...
     'Text', 'T2-w: CUBE', ...
-    'Position', [140, 745, 120, 30]);
+    'Position', [140, 745, 120, 30], ...
+    'Enable', 'off');
 cubeBtn.ButtonPushedFcn = @(btn, evt) toggleCUBEAF();
 
 % X rotation
@@ -335,6 +348,75 @@ clickableAxes = [];
 
 subjname = [];
 
+    function t = anatTitle()
+        if strcmp(CUBEMODE, 'AF')
+            t = 'Anti-FLAIR';
+        else
+            t = 'T2 CUBE';
+        end
+    end
+
+    function t = vstdTitle()
+        if strcmp(CUBEMODE, 'AF')
+            t = 'AFxVSTD';
+        else
+            t = 'T2xVSTD';
+        end
+    end
+
+    function f = segVolField()
+        if strcmp(SEGMODE, 'ANAT')
+            f = 'CUBE';
+        else
+            f = 'VxVSTD';
+        end
+    end
+
+    function segLabel = segVolLabel()
+        if strcmp(SEGMODE, 'ANAT')
+            segLabel = anatTitle();
+        else
+            segLabel = vstdTitle();
+        end
+    end
+
+    function updateSegBtnText()
+        segBtn.Text = ['SEGVOL: ' segVolLabel()];
+    end
+
+    function refreshVolMaps()
+        if ~isfield(data, 'T2CUBE')
+            return
+        end
+        data.T2xVSTD = data.vstd .* data.T2CUBE;
+        if isfield(data, 'hasAF') && data.hasAF
+            data.AFxVSTD = data.vstd .* data.AF;
+        end
+        if strcmp(CUBEMODE, 'AF') && isfield(data, 'hasAF') && data.hasAF
+            data.CUBE = data.AF;
+            data.VxVSTD = data.AFxVSTD;
+        else
+            CUBEMODE = 'CUBE';
+            data.CUBE = data.T2CUBE;
+            data.VxVSTD = data.T2xVSTD;
+        end
+    end
+
+    function updateCubeBtnState()
+        if isfield(data, 'hasAF') && data.hasAF
+            cubeBtn.Enable = 'on';
+            if strcmp(CUBEMODE, 'AF')
+                cubeBtn.Text = 'T2-w: Anti-FLAIR';
+            else
+                cubeBtn.Text = 'T2-w: CUBE';
+            end
+        else
+            cubeBtn.Enable = 'off';
+            CUBEMODE = 'CUBE';
+            cubeBtn.Text = 'T2-w: CUBE';
+        end
+    end
+
 % *** LOAD DATA ***
     function loadData()
         basefolder = uigetdir();
@@ -354,22 +436,34 @@ subjname = [];
         % Orig
         magfile = fullfile(subjectFolder, 'MAG.nii');
         cubefile = fullfile(subjectFolder, 'cr2mag', 'r4dT2.nii'); 
+        antiflairfile = fullfile(subjectFolder, 'cr2mag', 'r4dAF.nii');
         dmatfile = fullfile(subjectFolder, 'matproc', 'D.mat'); 
-
-        % TEMP ZY: 
-        if ANTIFLAIR
-            antiflairfile = fullfile(subjectFolder, 'cr2mag', 'r4dAF.nii'); % ANTI FLAIR
-        end
 
         % TEMP WRAP CA analysis 
         savefolder = fullfile(subjectFolder, OUTFOLDER);
-        if ~exist(savefolder, 'dir')
-            mkdir(savefolder);
-            disp(['Outfolder created: ' savefolder])
-        elseif exist([savefolder '/CAU.mat'], 'file')
-            disp('CAU.mat already exists')
+        if exist(savefolder, 'dir')
+            disp(['Outfolder exists: ' savefolder])
         else
-            disp('Outfolder but not CAU.mat exists')
+            disp(['Outfolder does not exist: ' savefolder])
+            if exist(subjectFolder, 'dir')
+                mkdir(savefolder);
+                disp(['Outfolder created: ' savefolder])
+            else
+                disp('Subject folder missing')
+                MAKEERROR;
+            end
+        end
+
+        if exist(savefolder, 'dir')
+            matFiles = dir(fullfile(savefolder, '*.mat'));
+            if isempty(matFiles)
+                disp('Outfolder has no .mat files')
+            else
+                disp('Outfolder .mat files:')
+                for k = 1:numel(matFiles)
+                    disp(['  ' matFiles(k).name])
+                end
+            end
         end
 
         if LOCAL
@@ -383,28 +477,34 @@ subjname = [];
         end
 
         data.mag = MRIread(magfile).vol;
-        data.T2CUBE = MRIread(cubefile).vol; % Now refer to the original T2 CUBE from cubefile
+        data.T2CUBE = MRIread(cubefile).vol;
         data.mag = imrotate(data.mag, -90);
         data.T2CUBE = imrotate(data.T2CUBE, -90);
 
-        % Load both cube and AF, allow switch 
-        try
-            data.AF = MRIread(antiflairfile).vol;
-            data.AF = imrotate(data.AF, -90);
-        catch
-            disp('No anti-FLAIR found')
-        end
-        
-        if ANTIFLAIR % This is just for initial loading; shouldn't need to tho 
-            data.CUBE = data.AF; % Now keep data.CUBE as variable representing both AF and original T2 CUBE 
+        data.hasAF = false;
+        if exist(antiflairfile, 'file')
+            try
+                data.AF = MRIread(antiflairfile).vol;
+                data.AF = imrotate(data.AF, -90);
+                data.hasAF = true;
+                disp('Loaded anti-FLAIR (r4dAF.nii)');
+            catch ME
+                disp(['anti-FLAIR load failed: ' ME.message]);
+            end
         else
-            data.CUBE = data.T2CUBE;
+            disp('No anti-FLAIR found (r4dAF.nii)');
         end
 
-        if strcmp(LOADMODE, 'MASK')
+        CUBEMODE = 'CUBE';
+        SEGMODE = 'VxVSTD';
+
+        if strcmp(LOADMODE, 'MASKED')
             load([rvelsfolder, '/rx.mat'], 'rx');
+            disp('rx velocity loaded')
             load([rvelsfolder, '/ry.mat'], 'ry');
+            disp('rx velocity loaded')
             load([rvelsfolder, '/rz.mat'], 'rz');
+            disp('rx velocity loaded')
             load([rvelsfolder, '/roi.mat'], 'roi');
             data.vx = rx;
             data.vy = ry;
@@ -420,10 +520,6 @@ subjname = [];
             data.vx = rx;
             data.vy = ry;
             data.vz = rz;
-            % [nx, ny, nz, nt] = size(rx); % CORRECT DIMS?  
-            % data.vx = reshape(rx, nx*ny*nz, nt);
-            % data.vy = reshape(ry, nx*ny*nz, nt);
-            % data.vz = reshape(rz, nx*ny*nz, nt);
             data.roi = ones(size(data.mag));
         end
 
@@ -455,18 +551,14 @@ subjname = [];
         data.imap(data.ginds) = 1:numel(data.ginds);
         data.imap = flip(data.imap, 2);
 
-        % TODO: filter before rms? also maybe do vstd, reduce BG errors (or keep rms to better see BG errors)
-        if OLDRMS
-            data.rms = zeros(size(data.imap));
-            data.rms(data.ginds) = sqrt(mean(double(data.vx).^2 + double(data.vy).^2 + double(data.vz).^2, 2));
-            data.rms = flip(data.rms, 2);
-        else
-            vstdfile = fullfile(subjectFolder, 'VSTD.nii.gz');
-            VSTD = MRIread(vstdfile).vol; % 040226: load VSTD instead of computing RMS
-            data.rms = VSTD;
-            data.rms = imrotate(data.rms, -90);
-        end
-        data.MIXED = data.rms.*data.CUBE;
+        vstdfile = fullfile(subjectFolder, 'VSTD.nii.gz');
+        VSTD = MRIread(vstdfile).vol; % 040226: load VSTD instead of computing RMS
+        data.vstd = VSTD;
+        data.vstd = imrotate(data.vstd, -90);
+
+        refreshVolMaps();
+        updateCubeBtnState();
+        updateSegBtnText();
 
         % OPTIONAL DATA IN AX21
         data.VENTS = ismember(data.aa, [14 15 4 5 44 45]);
@@ -484,9 +576,9 @@ subjname = [];
         end
 
         seg_max = 0.5; % Display limits in ax 2,3
-        seg_clim = [0, seg_max * max(data.(SEGMODE)(:))];
+        seg_clim = [0, seg_max * max(data.(segVolField())(:))];
 
-        [~, ~, zres] = size(data.(SEGMODE));
+        [~, ~, zres] = size(data.(segVolField()));
         s_slice.Limits = [1 zres];
         s_slice.Value = round(zres/2);
 
@@ -501,6 +593,8 @@ subjname = [];
         updateFlowPlane();
 
         disp('LoadData complete.')
+
+        toggleSaved();
 
     end
 
@@ -536,11 +630,11 @@ subjname = [];
         else
             axis(ax(2,2), 'image');
         end
-        title(ax(2,2), TTL22); 
+        title(ax(2,2), anatTitle()); 
 
         prevLim = axis(ax(2,3));  % Save zoom state
         cla(ax(2,3));
-        imagesc(ax(2,3), squeeze(data.MIXED(:,:,slice))'); % TEMP 
+        imagesc(ax(2,3), squeeze(data.VxVSTD(:,:,slice))');
         if ~isequal(prevLim, [0 1 0 1])  % If zoomed, restore view
             axis(ax(2,3), prevLim);
         else
@@ -551,7 +645,7 @@ subjname = [];
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, slice);
         end
-        title(ax(2,3), [TTL22 '\times VSTD']); 
+        title(ax(2,3), vstdTitle()); 
         clim(ax(2,3), seg_clim); 
 
         % TEMP: move to load function 
@@ -571,15 +665,13 @@ subjname = [];
         % Show time-resolved PCA-aligned 2D plane (proj2D) in ax(1,4)
         if isfield(data, 'proj2D') && ~isempty(data.proj2D)
             frame = currentFrame;
-            imagesc(ax(1,4), data.proj2D(:,:,frame));
-            % axis(ax(1,4), 'image');
+            imagesc(ax(1,4), flip(data.proj2D(:,:,frame)', 1));
             colormap(ax(1,4), gray);
             d2d = data.proj2D .* data.bseg;
             CSCALE = 0.01*str2double(cscDropdown.Value);
             clim(ax(1,4), [CSCALE * min(d2d(:)), CSCALE * max(d2d(:))]);
-            % title(ax(1,4), sprintf('Flow plane (%s), frame %d', toggle.Value, frame));
             hold(ax(1,4), 'on');
-            visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
+            visboundaries(ax(1,4), flip(data.bseg', 1), 'Color', 'r', 'LineWidth', 1.5);
             hold(ax(1,4), 'off');
         end
 
@@ -600,12 +692,12 @@ subjname = [];
                 img = data.velz2D(:,:,frame);
         end
 
-        imagesc(ax(1,4), img);
+        imagesc(ax(1,4), flip(img', 1));
         axis(ax(1,4), 'image');
         colormap(ax(1,4), gray);
         title(ax(1,4), sprintf('Flow plane (%s), frame %d', toggle.Value, frame));
         hold(ax(1,4), 'on');
-        visboundaries(ax(1,4), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
+        visboundaries(ax(1,4), flip(data.bseg', 1), 'Color', 'r', 'LineWidth', 1.5);
         hold(ax(1,4), 'off');
         d2d = data.proj2D .* data.bseg;
         CSCALE = 0.01*str2double(cscDropdown.Value);
@@ -636,7 +728,7 @@ subjname = [];
         y = clickedY;
         z = round(s_slice.Value);
 
-        [xres, yres, zres, ~] = size(data.rms);
+        [xres, yres, zres, ~] = size(data.vstd);
         if any([x y z] < 1) || x > xres || y > yres || z > zres
             uialert(fig, 'Invalid position for waveforms.', 'Save Error');
             return;
@@ -661,6 +753,7 @@ subjname = [];
         WF.bseg = data.bseg; 
         WF.size = str2num(szDropdown.Value); %#ok<*ST2NM>
         WF.thr = str2num(thrDropdown.Value);
+        WF.dilate = str2double(dilateDropdown.Value);
 
         save(fullfile(savefolder, filename), 'WF');
         
@@ -712,16 +805,24 @@ subjname = [];
         direction.pca = coeff(:,1); % PCA direction loadings
 
         % Perform PCA to get CSF flow direction
-        V = [VX_t VY_t VZ_t]; % (frames x 3)
+        V = [VX_t VY_t VZ_t]; % (frames x (voxels x 3))
         [~, score, ~] = pca(V, 'NumComponents', 1);
         PC1 = score(:,1); % Time series
 
         patch_width = str2double(szDropdown.Value);
         local_thresh = str2double(thrDropdown.Value);
+        if strcmpi(clipDropdown.Value, 'Off')
+            clip_on = false;
+            clip_val = 99;
+        else
+            clip_on = true;
+            clip_val = str2double(clipDropdown.Value);
+        end
+        dilate_val = str2double(dilateDropdown.Value);
 
         % *** SPECIFY SEG/DIR/SHAPE MODES IN TOP OF GUI *** 
         [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-            extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, SEGMODE, local_thresh, DIRMODE, SHAPEMODE);
+            extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, segVolField(), local_thresh, DIRMODE, SHAPEMODE, clip_on, clip_val, dilate_val);
 
         data.proj2D = proj2D.proj;
         data.velx2D = proj2D.velx;
@@ -738,8 +839,7 @@ subjname = [];
             delete(flowArrow);
             flowArrow = [];
         end
-        dir_xy = direction.(DIRMODE)([2, 3]); % DIR should not be -1 -- reverse arrow compared to initial code
-        % dir_xy = -direction.(DIRMODE)([2, 3]);  % vy (x), vz (z)
+        dir_xy = direction.(DIRMODE)([2, 3]);
         arrowLength = 15;
         if norm(dir_xy) > 0
             dir_xy = dir_xy / norm(direction.(DIRMODE)) * arrowLength;
@@ -758,30 +858,25 @@ subjname = [];
         for j = 1:3, hold(ax(2,j), 'off'); end
 
         % Local CS
-        imagesc(ax(1,2), cube_patch);
+        imagesc(ax(1,2), flip(cube_patch', 1));
         axis(ax(1,2), 'image');
-        title(ax(1,2), ['Flow plane: ' TTL22]);
+        title(ax(1,2), ['Flow plane: ' anatTitle()]);
         colormap(ax(1,2), gray);
         hold(ax(1,2), 'on');
-        visboundaries(ax(1,2), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
+        visboundaries(ax(1,2), flip(data.bseg', 1), 'Color', 'r', 'LineWidth', 1.5);
         hold(ax(1,2), 'off');
         ax(1,2).XTick = [];
         ax(1,2).YTick = [];
 
         % Local CS
-        imagesc(ax(1,3), patch);
+        imagesc(ax(1,3), flip(patch', 1));
         axis(ax(1,3), 'image');
 
-        if strcmp(SEGMODE, 'CUBE') %#ok<*IFBDUP>
-            % title(ax(1,3), ['Flow plane: ' TTL2]);
-            title(ax(1,3), ['Flow plane: ' SEGMODE]);
-        else
-            title(ax(1,3), ['Flow plane: ' SEGMODE]);
-        end
+        title(ax(1,3), ['Flow plane: ' segVolLabel()]);
 
         colormap(ax(1,3), gray);
         hold(ax(1,3), 'on');
-        visboundaries(ax(1,3), data.bseg, 'Color', 'r', 'LineWidth', 1.5);
+        visboundaries(ax(1,3), flip(data.bseg', 1), 'Color', 'r', 'LineWidth', 1.5);
         hold(ax(1,3), 'off');
         ax(1,3).XTick = [];
         ax(1,3).YTick = [];
@@ -812,7 +907,11 @@ subjname = [];
             plot(ax(3,2), flow, 'Color', 'r', 'LineWidth', 1.5);
             ylabel(ax(3,2), 'Flow rate (ml/s)');
             title(ax(3,2), sprintf('PC-1 dir: [%.2f  %.2f  %.2f]', direction.pca(1), direction.pca(2), direction.pca(3)));
-            legend(ax(3,2), 'Through-plane flow')
+
+            % legend(ax(3,2), 'Through-plane flow')
+            atpf = max(flow) - min(flow);
+            legend(ax(3,2), ['TPF-amp: ' num2str(atpf)]);
+
         end
 
         % Plot coronal RMS view in ax(1,3)
@@ -827,7 +926,7 @@ subjname = [];
         imagesc(ax(2,4), cor);
         axis(ax(2,4), 'image');
         colormap(ax(2,4), gray);
-        title(ax(2,4), [TTL22 '\times VSTD (coronal)']);
+        title(ax(2,4), [vstdTitle() ' (coronal)']);
         clim(ax(2,4), [0, 1.0 * max(data.CUBE(:))]);
         hold(ax(2,4), 'on');
 
@@ -835,7 +934,9 @@ subjname = [];
         dir_xz = direction.(DIRMODE)([1, 3]);  % vx and vz components
         dir_xz = dir_xz / norm(direction.pca) * 10;  % scale for visibility
 
-        quiver(ax(2,4), z, (nz/2) - 1, -dir_xz(1), dir_xz(2), ... % Why -dir_xz in the coronal plane? Seems correct tho 
+        % TODO: verify the quiver and the direction of LR velocity 
+        FLIPDXZ = -1; % Based on FMo, it seems like this arrow needs to be flipped?
+        quiver(ax(2,4), z, (nz/2) - 1, FLIPDXZ*dir_xz(1), dir_xz(2), ... 
             'Color', 'r', 'LineWidth', 1.5, 'AutoScale', 'off', 'MaxHeadSize', 1.5);
 
         hold(ax(1,3), 'off');
@@ -882,7 +983,7 @@ subjname = [];
         end
     end
 
-    % TODO this clears correctly? 
+    % TODO this clears correctly? not a toggle, just a show?  
     function toggleSaved()
         d = dir(fullfile(savefolder, '*.mat'));
         cla(ax(3,3), 'reset');
@@ -996,11 +1097,11 @@ subjname = [];
     end
 
     function toggleLOADMODE()
-        if strcmp(LOADMODE, 'MASK')
+        if strcmp(LOADMODE, 'MASKED')
             LOADMODE = 'FULL';
             mvBtn.Text = 'Load Mode: Full';
         elseif strcmp(LOADMODE, 'FULL')
-            LOADMODE = 'MASK';
+            LOADMODE = 'MASKED';
             mvBtn.Text = 'Load Mode: Masked';
         end
     end
@@ -1017,6 +1118,7 @@ subjname = [];
         % Update flow-plane and waveforms if a point is selected
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
+            updateFlowPlane();
         end
     end
 
@@ -1039,12 +1141,16 @@ subjname = [];
     end
 
     function toggleSEGMODE()
-        if strcmp(SEGMODE, 'MIXED')
-            SEGMODE = 'CUBE';
-            segBtn.Text = 'SEGVOL: CUBE';
-        elseif strcmp(SEGMODE, 'CUBE')
-            SEGMODE = 'MIXED';
-            segBtn.Text = 'SEGVOL: Mixed';
+        if strcmp(SEGMODE, 'VxVSTD')
+            SEGMODE = 'ANAT';
+        else
+            SEGMODE = 'VxVSTD';
+        end
+        updateSegBtnText();
+        if ~isempty(fieldnames(data))
+            seg_max = 0.5;
+            seg_clim = [0, seg_max * max(data.(segVolField())(:))];
+            updateDisplays();
         end
 
         % Update flow-plane and waveforms if a point is selected
@@ -1053,21 +1159,18 @@ subjname = [];
         end
     end
 
-    % April 07, 2026, Zaynab switch CUBE/anti-FLAIR   
     function toggleCUBEAF()
+        if ~isfield(data, 'hasAF') || ~data.hasAF
+            return
+        end
         if strcmp(CUBEMODE, 'CUBE')
             CUBEMODE = 'AF';
-            cubeBtn.Text = 'T2-w: anti-FLAIR';
-            data.CUBE = data.AF;
-            data.MIXED = data.rms.*data.CUBE;
-            TTL22 = 'anti-FLAIR';
-        elseif strcmp(CUBEMODE, 'AF')
+        else
             CUBEMODE = 'CUBE';
-            cubeBtn.Text = 'T2-w: CUBE'; 
-            data.CUBE = data.T2CUBE;
-            data.MIXED = data.rms.*data.CUBE;
-            TTL22 = 'T2 CUBE';
         end
+        refreshVolMaps();
+        updateCubeBtnState();
+        updateSegBtnText();
         updateDisplays();
         updateFlowPlane();
     end
@@ -1093,11 +1196,11 @@ subjname = [];
         % Normalize vector to length 1
         direction.man = rotation / norm(rotation);
         direction.man = direction.man(:);
-        % disp(['Manual direction set: ' num2str(direction.man')])
 
         % If a point is selected, update flow-plane
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
+            updateFlowPlane();
         end
     end
 

@@ -1,47 +1,66 @@
-% Todo need to update this sampling a bit 
+% 
 function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ... 
-    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE)
+    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE, CLIPON, CLIPVAL, DILATE)
     % Extracts through-plane flow using 2x interpolated patch and velocities
     % Fully vectorized version for velocity extraction and projection
 
-    % Ensure column vectors
-    center = center(:);
+    if nargin < 11 || isempty(DILATE)
+        DILATE = 0;
+    end
+    if nargin < 10 || isempty(CLIPVAL)
+        CLIPVAL = 99;
+    end
+    if nargin < 9 || isempty(CLIPON)
+        CLIPON = true;
+    end
 
+    % Ensure column vectors
+    center = center(:); % center in AP, SI, LR 
     direction = direction.(DIRMODE)(:);
-    % disp(DIRMODE)
 
     % Image dimensions
-    [nx, ny, nz] = size(data.rms);
+    [nx, ny, nz] = size(data.vstd);
     n_frames = size(data.vx, 2);
 
-    % Define local plane basis (in x-z plane)
-    dir_sag = [direction(1); direction(3)];
-    dir_sag(2) = -dir_sag(2);  % flip z axis for image convention
-    dir_sag = dir_sag / norm(dir_sag);
+    % *** From arrow direction to direction in data ***
+    % --- GUI-arrow direction is LR, AP, SI
+    % --- Data direction is AP, SI, LR
+    n = zeros(3, 1);
+    n(1) = direction(2); % LR direction 
+    n(2) = direction(3); % Data has dim 1 as AP 
+    n(3) = direction(1); % From SI to LR 
 
-    u = [dir_sag(1); 0; dir_sag(2)];
-    v = [-dir_sag(2); 0; dir_sag(1)];
-
-    pad_width = (patch_width - 1)/2;
+    % Now normal should be in data-direction, not arrow-direction
+    n = n/norm(n);
+    a = [1; 0; 0];
+    u = (a - dot(a,n)*n);  u = u/norm(u);
+    v = cross(n,u);        v = v/norm(v);
+    % u, v should span the local 2D-plane
 
     % Create regular grid in-plane
+    pad_width = (patch_width - 1)/2;
     [U, V] = meshgrid(-pad_width:pad_width, -pad_width:pad_width);
-    sample_points = center + u * U(:)' + v * V(:)';  % [3 x N]
-    sample_points = round(sample_points);
+    spoints = center + u * U(:)' + v * V(:)';  % [3 x N]
+    spoints = round(spoints);
+    % Sample points (spoints) should contain the x, y, z coordinates in the
+    % data.(SEGMODE) coordinates (nx, ny, nz)
 
     % Clip to valid indices
-    sample_points(1,:) = min(max(sample_points(1,:), 1), nx);
-    sample_points(2,:) = min(max(sample_points(2,:), 1), ny);
-    sample_points(3,:) = min(max(sample_points(3,:), 1), nz);
+    spoints(1,:) = min(max(spoints(1,:), 1), nx);
+    spoints(2,:) = min(max(spoints(2,:), 1), ny);
+    spoints(3,:) = min(max(spoints(3,:), 1), nz);
+
+    % Debug data points in 3D volume coordinates 
+    ddir = max(spoints') - min(spoints'); %#ok<*NASGU,*UDIM> % The span of x-coords looks right
+    % disp(['ddir: ' num2str(ddir)])
 
     % Linear index for data patch extraction
-    lin_idx = sub2ind([nx ny nz], sample_points(1,:), sample_points(2,:), sample_points(3,:));
+    lin_idx = sub2ind([nx ny nz], spoints(1,:), spoints(2,:), spoints(3,:));
     patch_vals = data.(SEGMODE)(lin_idx);
     patch = reshape(patch_vals, patch_width, patch_width);
 
     % Interpolate patch to 2× resolution
     [y0, x0] = size(patch);
-    [x, y] = meshgrid(1:x0, 1:y0);
     xi = linspace(1, x0, 2*x0);
     yi = linspace(1, y0, 2*y0);
     [XI, YI] = meshgrid(xi, yi);
@@ -51,11 +70,13 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     cube_patch = reshape(cube_patch_vals, patch_width, patch_width);
     cube_patch = interp2(cube_patch, XI, YI, 'cubic');
     
-    % Clip at 99
-    clip_val = prctile(patch_interp(:), 99);
-    patch_interp(patch_interp > clip_val) = clip_val;
+    if CLIPON
+        clip_val = prctile(patch_interp(:), CLIPVAL);
+        patch_interp(patch_interp > clip_val) = clip_val;
+    end
 
     % Segment interpolated patch
+    % TODO: make sure this doesn't find a tiny patch
     mval = max(patch_interp(:), [], 'omitnan');
     bseg_interp = patch_interp > (thresh/100) * mval;
     if patch_width < 50 % avoid applying this for SC 
@@ -64,7 +85,7 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     end
     bseg_interp = extractCentral(logical(bseg_interp));
 
-    % TEMP: using circularity constraint
+    % Consider using circularity constraint/regularization for CA
     if strcmp(SHAPE, 'CIRC')
         bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
         bseg_interp = extractCentral(bseg_circular);
@@ -73,13 +94,13 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
         bseg_interp = extractCentral(bseg_rectangular);
     end
 
-    % TEMP: dilate 2 voxels for CA
-    SE1 = strel('sphere', 2);
-    bseg_interp = imdilate(bseg_interp, SE1);
+    if DILATE > 0
+        SE1 = strel('sphere', DILATE);
+        bseg_interp = imdilate(bseg_interp, SE1);
+    end
 
     % Vectorized velocity extraction
     N = patch_width^2;
-    idx = sub2ind([nx ny nz], sample_points(1,:), sample_points(2,:), sample_points(3,:)); % 1 x N
 
     % Extract velocities for all frames at once (N x n_frames)
     vx_vals = zeros(N, n_frames);
@@ -87,19 +108,14 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     vz_vals = zeros(N, n_frames);
 
     % New sample points mapping from global-roi-patch index 
-    idx_g = sub2ind([nx ny nz], sample_points(1,:), sample_points(2,:), sample_points(3,:));
-    idx_r = data.imap(idx_g);
+    idx_g = sub2ind([nx ny nz], spoints(1,:), spoints(2,:), spoints(3,:));
+    idx_r = data.imap(idx_g); % This maps global inds to local inds if MASKED loading
     deli = idx_r==0; % remove these 
     idx_p = find(idx_r ~= 0);
     idx_r(deli) = [];
     vx_vals(idx_p, :) = data.vx(idx_r, :);
     vy_vals(idx_p, :) = data.vy(idx_r, :);
     vz_vals(idx_p, :) = data.vz(idx_r, :);
-
-    % TEST fix direction being off by -1 compared 4D data 
-    % vx_vals = -1*vx_vals;
-    % vy_vals = -1*vy_vals;
-    % vz_vals = -1*vz_vals;
 
     % Reshape to patch_width x patch_width x n_frames
     vx_frame = reshape(vx_vals, patch_width, patch_width, n_frames);

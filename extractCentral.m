@@ -1,37 +1,31 @@
 function centralMask = extractCentral(bwMask)
-    %GETCENTRAL Extract the connected component closest to the image center.
-    %   centralMask = GETCENTRAL(bwMask) returns a binary mask containing only the
-    %   connected component whose centroid is closest to the center of the input mask.
-    %
-    %   Input:
-    %       bwMask - logical binary mask (2D)
-    %
-    %   Output:
-    %       centralMask - logical binary mask with only the central connected component
+% extractCentral  Keep one connected component from a binary patch mask.
+%
+% If the largest component is at least 2x the second-largest, keep largest.
+% Otherwise keep the component whose centroid is closest to the patch center.
 
-    % Get image center
-    centerX = size(bwMask, 2) / 2;
-    centerY = size(bwMask, 1) / 2;
+centerX = size(bwMask, 2) / 2;
+centerY = size(bwMask, 1) / 2;
 
-    % Label connected components
-    CC = bwconncomp(bwMask);
+CC = bwconncomp(bwMask);
 
-    if CC.NumObjects <= 1
-        centralMask = bwMask; % only one component or none, return as is
-        return;
-    end
+if CC.NumObjects <= 1
+    centralMask = bwMask;
+    return;
+end
 
-    % Compute centroids of all connected components
+sizes = cellfun(@numel, CC.PixelIdxList);
+[sortedSizes, sortIdx] = sort(sizes, 'descend');
+
+if sortedSizes(1) >= 2 * sortedSizes(2)
+    pickIdx = sortIdx(1);
+else
     stats = regionprops(CC, 'Centroid');
     centroids = cat(1, stats.Centroid);
-
-    % Calculate distance from each centroid to image center
     dists = sqrt((centroids(:,1) - centerX).^2 + (centroids(:,2) - centerY).^2);
+    [~, pickIdx] = min(dists);
+end
 
-    % Find the component closest to the center
-    [~, idxClosest] = min(dists);
-
-    % Create output mask with only the closest component
-    centralMask = false(size(bwMask));
-    centralMask(CC.PixelIdxList{idxClosest}) = true;
+centralMask = false(size(bwMask));
+centralMask(CC.PixelIdxList{pickIdx}) = true;
 end
