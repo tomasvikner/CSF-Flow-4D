@@ -1,9 +1,12 @@
 % 
 function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ... 
-    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE, CLIPON, CLIPVAL, DILATE)
+    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE, CLIPON, CLIPVAL, DILATE, bsegManual)
     % Extracts through-plane flow using 2x interpolated patch and velocities
     % Fully vectorized version for velocity extraction and projection
 
+    if nargin < 12
+        bsegManual = [];
+    end
     if nargin < 11 || isempty(DILATE)
         DILATE = 0;
     end
@@ -20,15 +23,19 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
 
     % Image dimensions
     [nx, ny, nz] = size(data.vstd);
-    n_frames = size(data.vx, 2);
+    if isfield(data, 'hasVel') && data.hasVel
+        n_frames = size(data.vx, 2);
+    else
+        n_frames = 0;
+    end
 
     % *** From arrow direction to direction in data ***
     % --- GUI-arrow direction is LR, AP, SI
     % --- Data direction is AP, SI, LR
     n = zeros(3, 1);
-    n(1) = direction(2); % LR direction 
-    n(2) = direction(3); % Data has dim 1 as AP 
-    n(3) = direction(1); % From SI to LR 
+    n(1) = direction(2); % GUI AP to data AP 
+    n(2) = direction(3); % GUI SI to data SI 
+    n(3) = direction(1); % GUI LR to data LR 
 
     % Now normal should be in data-direction, not arrow-direction
     n = n/norm(n);
@@ -49,10 +56,6 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     spoints(1,:) = min(max(spoints(1,:), 1), nx);
     spoints(2,:) = min(max(spoints(2,:), 1), ny);
     spoints(3,:) = min(max(spoints(3,:), 1), nz);
-
-    % Debug data points in 3D volume coordinates 
-    ddir = max(spoints') - min(spoints'); %#ok<*NASGU,*UDIM> % The span of x-coords looks right
-    % disp(['ddir: ' num2str(ddir)])
 
     % Linear index for data patch extraction
     lin_idx = sub2ind([nx ny nz], spoints(1,:), spoints(2,:), spoints(3,:));
@@ -75,28 +78,41 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
         patch_interp(patch_interp > clip_val) = clip_val;
     end
 
-    % Segment interpolated patch
-    % TODO: make sure this doesn't find a tiny patch
-    mval = max(patch_interp(:), [], 'omitnan');
-    bseg_interp = patch_interp > (thresh/100) * mval;
-    if patch_width < 50 % avoid applying this for SC 
-        bseg_interp = imfill(bseg_interp, 'holes'); 
-        bseg_interp = bwareaopen(bseg_interp, 10);
-    end
-    bseg_interp = extractCentral(logical(bseg_interp));
+    if ~isempty(bsegManual)
+        bseg_interp = logical(bsegManual);
+        if ~isequal(size(bseg_interp), size(patch_interp))
+            error('extractThroughPlaneFlow_V3D:BadManualMask', ...
+                'Manual mask size must match interpolated patch.');
+        end
+    else
+        % Segment interpolated patch
+        mval = max(patch_interp(:), [], 'omitnan');
+        bseg_interp = patch_interp > (thresh/100) * mval;
+        if patch_width < 50 % avoid applying this for SC 
+            bseg_interp = imfill(bseg_interp, 'holes'); 
+            bseg_interp = bwareaopen(bseg_interp, 10);
+        end
+        bseg_interp = extractCentral(logical(bseg_interp));
 
-    % Consider using circularity constraint/regularization for CA
-    if strcmp(SHAPE, 'CIRC')
-        bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
-        bseg_interp = extractCentral(bseg_circular);
-    elseif strcmp(SHAPE, 'RECT')
-        bseg_rectangular = extractRectangular(bseg_interp, patch_interp, thresh);
-        bseg_interp = extractCentral(bseg_rectangular);
+        if strcmp(SHAPE, 'CIRC')
+            bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
+            bseg_interp = extractCentral(bseg_circular);
+        elseif strcmp(SHAPE, 'RECT')
+            bseg_rectangular = extractRectangular(bseg_interp, patch_interp, thresh);
+            bseg_interp = extractCentral(bseg_rectangular);
+        end
+
+        if DILATE > 0
+            SE1 = strel('sphere', DILATE);
+            bseg_interp = imdilate(bseg_interp, SE1);
+        end
     end
 
-    if DILATE > 0
-        SE1 = strel('sphere', DILATE);
-        bseg_interp = imdilate(bseg_interp, SE1);
+    hasVel = isfield(data, 'hasVel') && data.hasVel;
+    if ~hasVel
+        flow = [];
+        proj2D = struct('proj', [], 'velx', [], 'vely', [], 'velz', []);
+        return;
     end
 
     % Vectorized velocity extraction
