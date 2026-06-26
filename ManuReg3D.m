@@ -150,6 +150,7 @@ function data = ManuReg3D(parentFig, data, axRef, sliceIdx, movingField, display
     end
 
     function redrawSagittal(axh, S)
+        prevLim = captureAxisLim(axh);
         cla(axh);
         switch S.viewMode
             case 'MAG'
@@ -175,19 +176,16 @@ function data = ManuReg3D(parentFig, data, axRef, sliceIdx, movingField, display
                 title(axh, sprintf('Sagittal MAG + %s | slice %d/%d', ...
                     S.displayField, S.sliceIdx, S.nz));
         end
-        axis(axh, 'image');
-        axh.XTick = [];
-        axh.YTick = [];
+        restoreAxisLim(axh, prevLim);
     end
 
     function redrawLocal(axh, S)
+        prevLim = captureAxisLim(axh);
         cla(axh);
         if isempty(S.center) || numel(S.center) < 3 || isempty(S.direction) ...
                 || ~isfield(S.direction, S.dirMode) || isempty(S.direction.(S.dirMode))
             title(axh, 'Local CS (click a point in main GUI)');
-            axis(axh, 'image');
-            axh.XTick = [];
-            axh.YTick = [];
+            restoreAxisLim(axh, prevLim);
             return;
         end
 
@@ -197,8 +195,7 @@ function data = ManuReg3D(parentFig, data, axRef, sliceIdx, movingField, display
             segPatch = extractLocalPatchInterp(displayVol(S), centerVec, S.direction, S.dirMode, S.patchWidth);
         catch ME
             title(axh, 'Local CS unavailable');
-            axh.XTick = [];
-            axh.YTick = [];
+            restoreAxisLim(axh, prevLim);
             warning('ManuReg3D:LocalCS', '%s', ME.message);
             return;
         end
@@ -218,12 +215,11 @@ function data = ManuReg3D(parentFig, data, axRef, sliceIdx, movingField, display
                 image(axh, overlaySlice(magIm, segIm));
                 title(axh, sprintf('Local CS | MAG + %s', S.displayField));
         end
-        axis(axh, 'image');
-        axh.XTick = [];
-        axh.YTick = [];
+        restoreAxisLim(axh, prevLim);
     end
 
     function redrawAxial(axh, S)
+        prevLim = captureAxisLim(axh);
         cla(axh);
         midLR = S.midLR;
         nLR = size(S.magVol, 2);
@@ -248,9 +244,7 @@ function data = ManuReg3D(parentFig, data, axRef, sliceIdx, movingField, display
                 title(axh, sprintf('Axial MAG + %s | LR %d/%d', ...
                     S.displayField, midLR, nLR));
         end
-        axis(axh, 'image');
-        axh.XTick = [];
-        axh.YTick = [];
+        restoreAxisLim(axh, prevLim);
     end
 
     function vol = displayVol(S)
@@ -300,6 +294,31 @@ end
 
 function im = cropSlice(im, yIdx, xIdx)
     im = im(yIdx, xIdx);
+end
+
+function lims = captureAxisLim(axh)
+    if ~isvalid(axh) || isempty(axh.Children)
+        lims = [];
+        return;
+    end
+    xl = xlim(axh);
+    yl = ylim(axh);
+    if isequal(xl, [0 1]) && isequal(yl, [0 1])
+        lims = [];
+    else
+        lims = [xl, yl];
+    end
+end
+
+function restoreAxisLim(axh, lims)
+    if isempty(lims)
+        axis(axh, 'image');
+    else
+        xlim(axh, lims(1:2));
+        ylim(axh, lims(3:4));
+    end
+    axh.XTick = [];
+    axh.YTick = [];
 end
 
 function rgb = overlaySlice(imA, imB)

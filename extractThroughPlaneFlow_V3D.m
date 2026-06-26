@@ -1,9 +1,12 @@
 % 
 function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ... 
-    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE, CLIPON, CLIPVAL, DILATE, bsegManual)
+    = extractThroughPlaneFlow_V3D(data, center, direction, patch_width, SEGMODE, thresh, DIRMODE, SHAPE, CLIPON, CLIPVAL, DILATE, bsegManual, LOCALCS)
     % Extracts through-plane flow using 2x interpolated patch and velocities
     % Fully vectorized version for velocity extraction and projection
 
+    if nargin < 13 || isempty(LOCALCS)
+        LOCALCS = 'FULL';
+    end
     if nargin < 12
         bsegManual = [];
     end
@@ -85,21 +88,25 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
                 'Manual mask size must match interpolated patch.');
         end
     else
-        % Segment interpolated patch
-        mval = max(patch_interp(:), [], 'omitnan');
+        % Segment interpolated patch; threshold max from central disk only
+        patch_core = patchValsInCenterDisk(patch_interp, patch_width);
+        mval = max(patch_core(:), [], 'omitnan');
+        if isempty(mval) || ~isfinite(mval)
+            mval = max(patch_interp(:), [], 'omitnan');
+        end
         bseg_interp = patch_interp > (thresh/100) * mval;
         if patch_width < 50 % avoid applying this for SC 
             bseg_interp = imfill(bseg_interp, 'holes'); 
             bseg_interp = bwareaopen(bseg_interp, 10);
         end
-        bseg_interp = extractCentral(logical(bseg_interp));
+        bseg_interp = applyLocalCsSeg(logical(bseg_interp), LOCALCS);
 
         if strcmp(SHAPE, 'CIRC')
             bseg_circular = extractCircular(bseg_interp, patch_interp, thresh);
-            bseg_interp = extractCentral(bseg_circular);
+            bseg_interp = applyLocalCsSeg(bseg_circular, LOCALCS);
         elseif strcmp(SHAPE, 'RECT')
             bseg_rectangular = extractRectangular(bseg_interp, patch_interp, thresh);
-            bseg_interp = extractCentral(bseg_rectangular);
+            bseg_interp = applyLocalCsSeg(bseg_rectangular, LOCALCS);
         end
 
         if DILATE > 0
@@ -170,4 +177,24 @@ function [flow, cube_patch, patch_interp, bseg_interp, projV_interp, proj2D] ...
     proj2D.vely = vy_plane;
     proj2D.velz = vz_plane;
 
+end
+
+function mask = applyLocalCsSeg(mask, localCsMode)
+    if strcmp(localCsMode, 'FULL')
+        mask = logical(mask);
+    else
+        mask = extractSegment(logical(mask), localCsMode);
+    end
+end
+
+function vals = patchValsInCenterDisk(patch, patchWidth)
+    % Central disk for local threshold: radius = 40% of patch width
+    % (diameter ~80% of patch), centered on the interpolated plane.
+    [ny, nx] = size(patch);
+    cx = (nx + 1) / 2;
+    cy = (ny + 1) / 2;
+    radius = 0.4 * patchWidth * (nx / patchWidth);
+    [X, Y] = meshgrid(1:nx, 1:ny);
+    disk = (X - cx).^2 + (Y - cy).^2 <= radius^2;
+    vals = patch(disk);
 end

@@ -6,25 +6,32 @@ function CSF_GUI
 
 % ----------------------------SETTINGS---------------------------------- %
 
-% *** if false: Load velocities from Radiology instead of local *** 
-LOCAL = true; % Note: LOCAL might fail with load mode full if not rsynced
-LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; % This is only used if LOCAL is true 
+USER = 'TV';
+TV_OUT = 'TEMP';
 
-% *** SET THIS TO YOUR OWN BASE PATH INCLUDING ALL MRI DATA *** 
-BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; 
-% BASEPATH = '/Volumes/groups/CVMRIGroup/Users/zsy001/anti-FLAIR/quant/niis/';
+% USER = 'ZY';
+ZY_OUT = 'Z:\CVMRIGroup\Users\zsy001\anti-FLAIR\quant\AF2026';
 
-% *** SPECIFY OUTFOLDER FOR SAVING WAVEFORMS *** 
-OUTFOLDER = 'TEMP'; % Note set to ZY, TV, etc. for retest? 
+% USER = '';
 
-% AX21 = 'T1';
-% AX21 = 'FST1'; 
-% AX21 = 'dist'; 
-% AX21 = 'VENTS'; 
+if strcmp(USER, 'ZY')
+    LOCAL = false;
+    BASEPATH = 'Z:/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; % Where all subj-folders are 
+    LOCALVELS = ''; 
+    OUTFOLDER = ZY_OUT;
+    addpath('Z:\CVMRIGroup\Users\zsy001\anti-FLAIR\quant\Freesurfer Tools')
+elseif strcmp(USER, 'TV')
+    LOCAL = true; % Note: LOCAL might fail with load mode full if not rsynced
+    BASEPATH = '/Volumes/groups/CVMRIGroup/Users/txv016/WRAP2/niis/CURRENT/'; 
+    LOCALVELS = '/Users/txv016/Documents/BRAINVELS'; % This is only used if LOCAL is true 
+    OUTFOLDER = TV_OUT;
+    addpath('/Users/txv016/Documents/MATLAB/Freesurfer Tools') % TODO: better use niftiread
+else
+    disp('*** Add USER and specify settings for loading/saving data ***')
+end
+
 AX21 = 'MAG'; % If not specified, 4D-MAG vill be placed in ax(2,1)
-
-% TODO: better use niftiread (needs different rotation)
-addpath('/Users/txv016/Documents/MATLAB/Freesurfer Tools')
+% or 'T1', 'FST1', 'dist', 'VENTS'
 
 % ---------------------------------------------------------------------- %
 
@@ -84,7 +91,7 @@ uibutton(fig, 'Text','Load 4D data', ...
 
 closeBtn = uibutton(fig, ...
     'Text', 'Close GUI', ...
-    'Position', [15, 805, 120, 30], ...
+    'Position', [15, 745, 120, 30], ...
     'ButtonPushedFcn', @(btn, evt) closeApp());
 
 s_slice = uislider(g,'Limits',[1 10],'MajorTicks',[],'Orientation','vertical');
@@ -183,11 +190,6 @@ manuRoiBtn = uibutton(fig, ...
     'Position', [830, 775, 55, 30]);
 manuRoiBtn.ButtonPushedFcn = @(btn, evt) runManuROI();
 
-showVolBtn = uibutton(fig, ...
-    'Text', 'Show Volumes', ...
-    'Position', [830, 745, 90, 30]);
-showVolBtn.ButtonPushedFcn = @(btn, evt) showOverlay2D();
-
 savedBtn = uibutton(fig, ... % show saved
     'Text', 'Show Saved', ...
     'Position', [RBX, 270, 75, 30]);
@@ -205,48 +207,59 @@ rotation = [0, 0, 1]; % [x, y, z]
 DIRMODE = 'pca'; 
 dirBtn = uibutton(fig, ...
     'Text', 'Direction: PCA', ...
-    'Position', [140, 805, 120, 30]); % xpos swap 900 -> 120
+    'Position', [15, 805, 120, 30]);
 dirBtn.ButtonPushedFcn = @(btn, evt) toggleDIRMODE();
-
-SHAPEMODE = 'ANY'; % ANY has no effect 
-shapeBtn = uibutton(fig, ...
-    'Text', 'Shape: Any', ...
-    'Position', [140, 865, 120, 30]); % xpos swap 900 -> 120
-shapeBtn.ButtonPushedFcn = @(btn, evt) toggleSHAPEMODE();
-
-SEGMODE = 'VxVSTD';
-segBtn = uibutton(fig, ...
-    'Text', 'SegVol: T2xVSTD', ...
-    'Position', [140, 835, 120, 30]); % xpos swap 900 -> 120
-segBtn.ButtonPushedFcn = @(btn, evt) toggleSEGMODE();
 
 WFSHOWMODE = 'FLOW';
 wfsBtn = uibutton(fig, ...
     'Text', 'WF-Vis: Flow only', ...
-    'Position', [140, 775, 120, 30]);
+    'Position', [15, 775, 120, 30]);
 wfsBtn.ButtonPushedFcn = @(btn, evt) toggleWFSHOWMODE();
+
+SHAPEMODE = 'ANY'; % ANY has no effect 
+shapeBtn = uibutton(fig, ...
+    'Text', 'Shape: Any', ...
+    'Position', [140, 865, 120, 30]);
+shapeBtn.ButtonPushedFcn = @(btn, evt) toggleSHAPEMODE();
+
+LOCALCSMODE = 'FULL';
+localCsBtn = uibutton(fig, ...
+    'Text', 'Local CS: Full', ...
+    'Position', [140, 835, 120, 30]);
+localCsBtn.ButtonPushedFcn = @(btn, evt) toggleLOCALCSMODE();
+
+SEGMODE = 'VxVSTD';
+segBtn = uibutton(fig, ...
+    'Text', 'SegVol: T2xVSTD', ...
+    'Position', [140, 805, 120, 30]);
+segBtn.ButtonPushedFcn = @(btn, evt) toggleSEGMODE();
 
 CUBEMODE = 'CUBE';
 cubeBtn = uibutton(fig, ...
     'Text', 'T2-w: CUBE', ...
-    'Position', [140, 745, 120, 30], ...
+    'Position', [140, 775, 120, 30], ...
     'Enable', 'off');
 cubeBtn.ButtonPushedFcn = @(btn, evt) toggleCUBEAF();
 
 autoReg3DBtn = uibutton(fig, ...
     'Text', 'AutoReg-3D', ...
-    'Position', [140, 715, 120, 30]);
+    'Position', [140, 745, 120, 30]);
 autoReg3DBtn.ButtonPushedFcn = @(btn, evt) runAutoReg3D();
 
 manuRegBtn = uibutton(fig, ...
     'Text', 'ManuReg-3D', ...
-    'Position', [140, 685, 120, 30]);
+    'Position', [140, 715, 120, 30]);
 manuRegBtn.ButtonPushedFcn = @(btn, evt) runManuReg3D();
 
 restoreT2wBtn = uibutton(fig, ...
     'Text', 'Restore T2-w', ...
-    'Position', [140, 655, 120, 30]);
+    'Position', [140, 685, 120, 30]);
 restoreT2wBtn.ButtonPushedFcn = @(btn, evt) restoreT2w();
+
+showVolBtn = uibutton(fig, ...
+    'Text', 'Show Volumes', ...
+    'Position', [140, 655, 120, 30]);
+showVolBtn.ButtonPushedFcn = @(btn, evt) showOverlay2D();
 
 % X rotation
 yrpos = 845;
@@ -535,7 +548,7 @@ subjname = [];
 
         [~, ~, patch_interp, ~, ~, ~] = extractThroughPlaneFlow_V3D( ...
             data, [x, y, z], direction, patch_width, segVolField(), local_thresh, ...
-            DIRMODE, SHAPEMODE, clip_on, clip_val, dilate_val);
+            DIRMODE, SHAPEMODE, clip_on, clip_val, dilate_val, [], LOCALCSMODE);
 
         bsegManual = ManuSegROI(patch_interp);
         if isempty(bsegManual) || ~any(bsegManual(:))
@@ -1077,7 +1090,7 @@ subjname = [];
 
         % *** SPECIFY SEG/DIR/SHAPE MODES IN TOP OF GUI *** 
         [flow, cube_patch, patch, bseg, ~, proj2D] = ... 
-            extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, segVolField(), local_thresh, DIRMODE, SHAPEMODE, clip_on, clip_val, dilate_val, bsegManual);
+            extractThroughPlaneFlow_V3D(data, [x, y, z], direction, patch_width, segVolField(), local_thresh, DIRMODE, SHAPEMODE, clip_on, clip_val, dilate_val, bsegManual, LOCALCSMODE);
 
         data.patch = patch;
         data.bseg = bseg;
@@ -1334,44 +1347,7 @@ subjname = [];
             uialert(fig, 'Load data first.', 'Show Volumes');
             return;
         end
-
-        slice = round(s_slice.Value);
-        im1 = squeeze(data.ax21(:,:,slice))';
-        im2 = squeeze(data.CUBE(:,:,slice))';
-        im3 = squeeze(data.VxVSTD(:,:,slice))';
-
-        t1 = AX21;
-        t2 = anatTitle();
-        t3 = vstdTitle();
-        pairs = {im1, im2, [t1 '/' t2]; im1, im3, [t1 '/' t3]; im2, im3, [t2 '/' t3]};
-
-        h = figure('Name', sprintf('Show Volumes — slice %d', slice), ...
-            'NumberTitle', 'off', 'Color', 'w');
-        ha = tight_subplot(1, 3, [0.02 0.02], [0.08 0.02], [0.02 0.02]);
-
-        for k = 1:3
-            axes(ha(k)); %#ok<LAXES>
-            imshow(overlayPair(pairs{k,1}, pairs{k,2}));
-            axis image off;
-            title(pairs{k,3});
-        end
-    end
-
-    function rgb = overlayPair(imA, imB)
-        a = normSlice(imA);
-        b = normSlice(imB);
-        rgb = cat(3, a, b, zeros(size(a)));
-    end
-
-    function im = normSlice(im)
-        im = double(im);
-        lo = min(im(:));
-        hi = max(im(:));
-        if hi > lo
-            im = (im - lo) / (hi - lo);
-        else
-            im = zeros(size(im));
-        end
+        ShowVolumes(fig, data, round(s_slice.Value));
     end
 
     function exportProj()
@@ -1433,6 +1409,23 @@ subjname = [];
         end
 
         % Update flow-plane and waveforms if a point is selected
+        if ~isempty(clickedX) && ~isempty(clickedY)
+            updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
+        end
+    end
+
+    function toggleLOCALCSMODE()
+        if strcmp(LOCALCSMODE, 'FULL')
+            LOCALCSMODE = 'CENTRAL';
+            localCsBtn.Text = 'Local CS: Central';
+        elseif strcmp(LOCALCSMODE, 'CENTRAL')
+            LOCALCSMODE = 'LARGEST';
+            localCsBtn.Text = 'Local CS: Largest';
+        else
+            LOCALCSMODE = 'FULL';
+            localCsBtn.Text = 'Local CS: Full';
+        end
+
         if ~isempty(clickedX) && ~isempty(clickedY)
             updateWaveformsFromCoords(clickedX, clickedY, round(s_slice.Value));
         end

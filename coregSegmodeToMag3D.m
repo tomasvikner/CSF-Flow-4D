@@ -21,7 +21,8 @@ function data = coregSegmodeToMag3D(fig, data, axFixed, axMoving, sliceIdx, movi
         return;
     end
 
-    disp(sprintf('coregSegmodeToMag3D(): %s -> %s', movingField, fixedField));
+    fprintf('coregSegmodeToMag3D(): %s -> %s\n', movingField, fixedField);
+    % disp(sprintf('coregSegmodeToMag3D(): %s -> %s', movingField, fixedField));
 
     fixedVol = single(volume3D(data.(fixedField)));
     movingVol = single(volume3D(data.(movingField)));
